@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 
 use tauri::{
-    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, Runtime, WebviewUrl,
+    window::Color, AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, Runtime, WebviewUrl,
     WebviewWindowBuilder,
 };
 
@@ -56,10 +56,11 @@ impl PopupWindow {
             .position(position.x as f64, position.y as f64)
             .decorations(false)
             .transparent(true)
+            .background_color(Color(0, 0, 0, 0))
             .resizable(true)
             .always_on_top(true)
             .skip_taskbar(true)
-            .shadow(false)
+            .shadow(true)
             .focused(true)
             .build()
             .map_err(|error| error.to_string())?;
@@ -70,13 +71,20 @@ impl PopupWindow {
         };
 
         #[cfg(target_os = "macos")]
-        if let Err(error) = window_vibrancy::apply_vibrancy(
-            &window,
-            window_vibrancy::NSVisualEffectMaterial::Popover,
-            Some(window_vibrancy::NSVisualEffectState::Active),
-            Some(10.0),
-        ) {
-            log::warn!("could not apply popup vibrancy: {error}");
+        {
+            let effect_window = window.clone();
+            app.run_on_main_thread(move || {
+                let _ = window_vibrancy::clear_vibrancy(&effect_window);
+                if let Err(error) = window_vibrancy::apply_vibrancy(
+                    &effect_window,
+                    window_vibrancy::NSVisualEffectMaterial::Popover,
+                    Some(window_vibrancy::NSVisualEffectState::Active),
+                    Some(16.0),
+                ) {
+                    log::warn!("could not apply popup vibrancy: {error}");
+                }
+            })
+            .map_err(|error| error.to_string())?;
         }
 
         window.set_focus().map_err(|error| error.to_string())?;

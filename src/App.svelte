@@ -296,15 +296,15 @@
   .debug-e2e-shell { display: grid; place-items: center; min-height: 100vh; padding: 30px; }
   .debug-e2e-shell textarea { width: 100%; min-height: 180px; }
 
-  .popup-shell { display: flex; flex-direction: column; height: calc(100vh - 4px); margin: 2px; overflow: hidden; border: 1px solid rgba(255,255,255,.58); border-radius: 10px; background: linear-gradient(145deg, rgba(255,255,255,.56), rgba(242,245,249,.42)); box-shadow: none; font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; font-synthesis: none; font-weight: 300; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; backdrop-filter: blur(24px) saturate(130%); -webkit-backdrop-filter: blur(24px) saturate(130%); }
-  .popup-header { position: relative; display: flex; align-items: center; flex: 0 0 auto; height: 34px; padding: 0 7px 0 11px; border-bottom: 1px solid rgba(112,122,143,.09); user-select: none; }
-  .popup-title { display: flex; align-items: center; color: #41454d; font-size: 11px; font-weight: 400; letter-spacing: 0; }
+  .popup-shell { position: relative; display: flex; flex-direction: column; height: 100vh; overflow: hidden; border: 1px solid rgba(255,255,255,.46); border-radius: 16px; background: rgba(247,249,252,.30); box-shadow: inset 0 1px 0 rgba(255,255,255,.62); font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; font-synthesis: none; font-weight: 300; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+  .popup-header { position: relative; z-index: 1; display: flex; align-items: center; flex: 0 0 auto; height: 36px; padding: 0 9px 0 14px; border-bottom: 1px solid rgba(87,94,108,.09); user-select: none; }
+  .popup-title { display: flex; align-items: center; color: rgba(28,29,33,.80); font-size: 12px; font-weight: 400; letter-spacing: 0; }
   .popup-title strong { font-weight: 400; }
-  .icon-button { display: grid; place-items: center; width: 22px; height: 22px; margin-left: 6px; padding: 0; border-radius: 5px; background: transparent; color: #858b98; opacity: .62; }
+  .icon-button { display: grid; place-items: center; width: 22px; height: 22px; margin-left: 6px; padding: 0; border-radius: 50%; background: transparent; color: rgba(55,59,66,.48); opacity: 1; }
   .icon-button svg { width: 12px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.4; }
-  .icon-button:hover { background: rgba(30,36,50,.07) !important; color: #303746; opacity: 1; }
-  .result { flex: 1 1 auto; min-height: 0; padding: 11px 13px; overflow-y: auto; scrollbar-color: rgba(95,103,120,.20) transparent; scrollbar-width: thin; }
-  .result > p { margin: 0; color: #474b53; font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; font-size: 12px; font-style: normal; font-variation-settings: "wght" 300; font-weight: 300 !important; letter-spacing: .01em; line-height: 1.45; white-space: pre-wrap; }
+  .icon-button:hover { background: rgba(60,64,72,.08) !important; color: rgba(35,38,44,.72); }
+  .result { position: relative; z-index: 1; flex: 1 1 auto; min-height: 0; padding: 11px 15px 10px; overflow-y: auto; scrollbar-color: rgba(95,103,120,.16) transparent; scrollbar-width: thin; }
+  .result > p { margin: 0; color: rgba(38,40,46,.78); font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; font-size: 12px; font-style: normal; font-variation-settings: "wght" 300; font-weight: 300 !important; letter-spacing: .005em; line-height: 1.52; white-space: pre-wrap; }
   .stream-status { margin-left: auto; color: #7d828c; font-size: 9px; font-weight: 300; }
   .stream-status { display: flex; align-items: center; gap: 6px; }
   .stream-status i { width: 6px; height: 6px; border-radius: 50%; background: #7060df; box-shadow: 0 0 0 3px rgba(112,96,223,.10); animation: pulse 1s infinite alternate; }
@@ -317,13 +317,13 @@
   .error { display: flex; align-items: flex-start; gap: 10px; padding: 12px 13px; border: 1px solid rgba(189,74,64,.13); border-radius: 11px; background: rgba(244,92,81,.08); color: #a43d35; }
   .error svg { flex: 0 0 auto; width: 18px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.6; }
   .error p { margin: 0; font-size: 12px; font-weight: 300; line-height: 1.45; }
-  .popup-actions { display: flex; align-items: center; gap: 5px; flex: 0 0 auto; min-height: 38px; padding: 6px 8px; border-top: 1px solid rgba(112,122,143,.09); background: rgba(247,248,250,.20); }
-  .popup-actions button { min-width: 52px; padding: 4px 8px; border-radius: 5px; font-size: 9px; font-weight: 400; transition: transform .15s ease, background .15s ease; }
+  .popup-actions { position: relative; z-index: 1; display: flex; align-items: center; gap: 6px; flex: 0 0 auto; min-height: 40px; padding: 6px 10px 8px; border-top: 1px solid rgba(87,94,108,.09); background: rgba(249,250,252,.12); }
+  .popup-actions button { min-width: 52px; padding: 5px 9px; border: 0; border-radius: 8px; font-size: 9px; font-weight: 400; box-shadow: inset 0 1px 0 rgba(255,255,255,.22); transition: transform .15s ease, background .15s ease; }
   .popup-actions button:active:not(:disabled) { transform: translateY(1px); }
-  .popup-actions .primary { background: #343840; box-shadow: none; color: white; }
-  .popup-actions .primary:hover:not(:disabled) { background: #353946; }
-  .popup-actions .secondary { border-color: rgba(83,91,108,.10); background: rgba(80,88,104,.08); color: #404550; }
-  .popup-actions .secondary:hover:not(:disabled) { background: rgba(80,88,104,.13); }
+  .popup-actions .primary { background: rgba(42,44,51,.84); color: rgba(255,255,255,.94); }
+  .popup-actions .primary:hover:not(:disabled) { background: rgba(36,39,46,.92); }
+  .popup-actions .secondary { border: 0; background: rgba(90,96,108,.10); color: rgba(35,38,44,.74); }
+  .popup-actions .secondary:hover:not(:disabled) { background: rgba(90,96,108,.14); }
   .button-spinner { display: inline-block; width: 10px; height: 10px; margin-right: 5px; border: 1.5px solid rgba(255,255,255,.4); border-top-color: white; border-radius: 50%; animation: spin .7s linear infinite; }
   @keyframes pulse { to { opacity: .35; transform: scale(.8); } }
   @keyframes blink { 50% { opacity: 0; } }
