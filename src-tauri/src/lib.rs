@@ -26,8 +26,20 @@ const DEFAULT_MODEL: &str = "gpt-4o-mini";
 const KEYCHAIN_SERVICE: &str = "com.artamrj.shakespaire";
 const KEYCHAIN_ACCOUNT: &str = "ai-api-key";
 const SETTINGS_FILE: &str = "ai-settings.json";
+const FALLBACK_KEY_FILE: &str = "ai-api-key.txt";
 const STREAM_MAX_ATTEMPTS: usize = 3;
 const STREAM_RETRY_DELAYS_MS: [u64; STREAM_MAX_ATTEMPTS - 1] = [250, 700];
+
+/// Human-readable name of the platform credential store used in log/user messages.
+fn credential_store_name() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "macOS Keychain"
+    } else if cfg!(target_os = "windows") {
+        "Windows Credential Manager"
+    } else {
+        "Secret Service (keyring)"
+    }
+}
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -64,7 +76,111 @@ fn settings_path(app: &AppHandle) -> Result<PathBuf, String> {
 
 fn keychain_entry() -> Result<Entry, String> {
     Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
-        .map_err(|error| format!("could not access macOS Keychain: {error}"))
+        .map_err(|error| format!("could not access {}: {error}", credential_store_name()))
+}
+
+fn fallback_key_path(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_config_dir()
+        .map(|directory| directory.join(FALLBACK_KEY_FILE))
+        .map_err(|error| format!("could not resolve fallback key directory: {error}"))
+}
+
+/// Reads the API key from the encrypted platform keychain, falling back to a
+/// local file when the keychain is unavailable (common on Linux without
+/// gnome-keyring/kwallet and on some Windows configurations).
+fn load_api_key(app: &AppHandle) -> String {
+    if let Ok(entry) = keychain_entry() {
+        match entry.get_password() {
+            Ok(api_key) => return api_key,
+            Err(KeyringError::NoEntry) => {}
+            Err(error) => log::warn!(
+                "could not read API key from {}: {error}",
+                credential_store_name()
+            ),
+        }
+    }
+
+    // Fallback: read from a local file in the app config directory.
+    if let Ok(path) = fallback_key_path(app) {
+        if let Ok(api_key) = fs::read_to_string(&path) {
+            log::info!(
+                "loaded API key from fallback file ({} unavailable)",
+                credential_store_name()
+            );
+            return api_key.trim().to_string();
+        }
+    }
+    String::new()
+}
+
+/// Persists the API key to the platform keychain, falling back to a local
+/// file when the keychain is unavailable. Returns Ok(()) as long as the key
+/// is stored in at least one location.
+fn save_api_key(app: &AppHandle, api_key: &str) -> Result<(), String> {
+    if api_key.is_empty() {
+        // Best-effort deletion from both stores; ignore failures.
+        if let Ok(entry) = keychain_entry() {
+            match entry.delete_credential() {
+                Ok(()) | Err(KeyringError::NoEntry) => {}
+                Err(error) => log::warn!(
+                    "could not clear API key from {}: {error}",
+                    credential_store_name()
+                ),
+            }
+        }
+        if let Ok(path) = fallback_key_path(app) {
+            let _ = fs::remove_file(&path);
+        }
+        return Ok(());
+    }
+
+    // Try the keychain first.
+    let keychain_ok = match keychain_entry() {
+        Ok(entry) => match entry.set_password(api_key) {
+            Ok(()) => true,
+            Err(error) => {
+                log::warn!(
+                    "could not save API key to {}: {error}; using fallback file",
+                    credential_store_name()
+                );
+                false
+            }
+        },
+        Err(error) => {
+            log::warn!("{error}; using fallback file");
+            false
+        }
+    };
+
+    if keychain_ok {
+        // Clean up any stale fallback file so the keychain is the source of truth.
+        if let Ok(path) = fallback_key_path(app) {
+            let _ = fs::remove_file(&path);
+        }
+        return Ok(());
+    }
+
+    // Fallback: write to a local file in the app config directory.
+    let path = fallback_key_path(app)?;
+    let directory = path
+        .parent()
+        .ok_or_else(|| "fallback key path has no parent directory".to_string())?;
+    fs::create_dir_all(directory)
+        .map_err(|error| format!("could not create fallback key directory: {error}"))?;
+
+    // Write atomically to avoid corrupting the key on crash.
+    let temporary_path = path.with_extension("txt.tmp");
+    fs::write(&temporary_path, api_key)
+        .map_err(|error| format!("could not write fallback API key: {error}"))?;
+    fs::rename(&temporary_path, &path)
+        .map_err(|error| format!("could not commit fallback API key: {error}"))?;
+
+    log::info!(
+        "API key saved to fallback file ({} unavailable)",
+        credential_store_name()
+    );
+    Ok(())
 }
 
 fn load_ai_config(app: &AppHandle) -> Result<(), String> {
@@ -87,14 +203,8 @@ fn load_ai_config(app: &AppHandle) -> Result<(), String> {
         Err(error) => log::warn!("could not read persisted AI settings: {error}"),
     }
 
-    match keychain_entry() {
-        Ok(entry) => match entry.get_password() {
-            Ok(api_key) => config.api_key = api_key,
-            Err(KeyringError::NoEntry) => {}
-            Err(error) => log::warn!("could not read API key from macOS Keychain: {error}"),
-        },
-        Err(error) => log::warn!("{error}"),
-    }
+    // Try the platform keychain first, then a local fallback file.
+    config.api_key = load_api_key(app);
 
     // Explicit environment variables remain useful for development and automation.
     if let Ok(value) = std::env::var("OPENAI_BASE_URL") {
@@ -113,21 +223,11 @@ fn load_ai_config(app: &AppHandle) -> Result<(), String> {
 }
 
 fn persist_ai_config(app: &AppHandle, config: &AiConfig) -> Result<(), String> {
-    let entry = keychain_entry()?;
-    if config.api_key.is_empty() {
-        match entry.delete_credential() {
-            Ok(()) | Err(KeyringError::NoEntry) => {}
-            Err(error) => {
-                return Err(format!(
-                    "could not clear API key from macOS Keychain: {error}"
-                ))
-            }
-        }
-    } else {
-        entry
-            .set_password(&config.api_key)
-            .map_err(|error| format!("could not save API key in macOS Keychain: {error}"))?;
-    }
+    // Store the API key in the platform keychain with a local file fallback.
+    // This never fails as long as we can write to the config directory, so the
+    // app remains usable on Linux without gnome-keyring/kwallet and on Windows
+    // configurations where the Credential Manager is locked down.
+    save_api_key(app, &config.api_key)?;
 
     let path = settings_path(app)?;
     let directory = path
@@ -485,10 +585,42 @@ fn setup_click_away(app: &AppHandle) {
 #[cfg(not(target_os = "macos"))]
 fn setup_click_away(_app: &AppHandle) {}
 
+/// Initialises `env_logger` and additionally tees log output to a file in the
+/// user's data directory so crashes can be diagnosed when the app exits
+/// before the window appears (common on Windows/Linux). Falls back to
+/// stderr-only if the log directory cannot be resolved or written to.
+fn init_logger() {
+    let mut builder =
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"));
+    builder.format_timestamp_secs();
+
+    // Try to also write logs to a file for post-mortem debugging on Windows/Linux.
+    // `data_local_dir` is appropriate for log files on all platforms.
+    let log_dir = dirs_next::data_local_dir()
+        .or_else(dirs_next::config_dir)
+        .map(|d| d.join("shakespaire").join("logs"));
+
+    if let Some(log_dir) = log_dir {
+        let _ = fs::create_dir_all(&log_dir);
+        let log_path = log_dir.join("shakespaire.log");
+        match fs::OpenOptions::new().create(true).append(true).open(&log_path) {
+            Ok(file) => {
+                builder.target(env_logger::Target::Pipe(Box::new(file)));
+                eprintln!("logging to {}", log_path.display());
+            }
+            Err(error) => {
+                eprintln!("could not open log file {}: {error}", log_path.display());
+            }
+        }
+    }
+
+    builder.init();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-    log::info!("shakespAIre starting");
+    init_logger();
+    log::info!("shakespAIre starting on {}", std::env::consts::OS);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -508,9 +640,21 @@ pub fn run() {
             debug_e2e_report,
         ])
         .setup(|app| {
+            // Loading config is essential but already logs warnings on failure
+            // and never returns an error for keychain/file issues, so the `?`
+            // here only surfaces genuinely fatal config problems.
             load_ai_config(app.handle())?;
-            PopupWindow::prepare(app.handle())?;
-            setup_global_shortcut(app.handle())?;
+
+            // Prewarming the popup window and registering the global shortcut
+            // are best-effort: they commonly fail on Linux (no keyring, X11 vs
+            // Wayland) and on Windows (WebView2 issues, permissions). The app
+            // must still open the settings window so the user can troubleshoot.
+            if let Err(error) = PopupWindow::prepare(app.handle()) {
+                log::warn!("could not prewarm popup window: {error}");
+            }
+            if let Err(error) = setup_global_shortcut(app.handle()) {
+                log::warn!("could not register global shortcut: {error}");
+            }
             setup_click_away(app.handle());
             Ok(())
         })
