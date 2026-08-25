@@ -296,7 +296,7 @@
   .debug-e2e-shell { display: grid; place-items: center; min-height: 100vh; padding: 30px; }
   .debug-e2e-shell textarea { width: 100%; min-height: 180px; }
 
-  .popup-shell { position: relative; display: flex; flex-direction: column; height: 100vh; overflow: hidden; border: 1px solid rgba(255,255,255,.46); border-radius: 16px; background: rgba(247,249,252,.30); box-shadow: inset 0 1px 0 rgba(255,255,255,.62); font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; font-synthesis: none; font-weight: 300; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+  .popup-shell { position: relative; display: flex; flex-direction: column; height: 100vh; overflow: hidden; border: 1px solid rgba(255,255,255,.22); border-radius: 16px; background: rgba(255,255,255,.025); box-shadow: inset 0 1px 0 rgba(255,255,255,.28); font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; font-synthesis: none; font-weight: 300; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
   .popup-header { position: relative; z-index: 1; display: flex; align-items: center; flex: 0 0 auto; height: 36px; padding: 0 9px 0 14px; border-bottom: 1px solid rgba(87,94,108,.09); user-select: none; }
   .popup-title { display: flex; align-items: center; color: rgba(28,29,33,.80); font-size: 12px; font-weight: 400; letter-spacing: 0; }
   .popup-title strong { font-weight: 400; }
@@ -317,7 +317,7 @@
   .error { display: flex; align-items: flex-start; gap: 10px; padding: 12px 13px; border: 1px solid rgba(189,74,64,.13); border-radius: 11px; background: rgba(244,92,81,.08); color: #a43d35; }
   .error svg { flex: 0 0 auto; width: 18px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.6; }
   .error p { margin: 0; font-size: 12px; font-weight: 300; line-height: 1.45; }
-  .popup-actions { position: relative; z-index: 1; display: flex; align-items: center; gap: 6px; flex: 0 0 auto; min-height: 40px; padding: 6px 10px 8px; border-top: 1px solid rgba(87,94,108,.09); background: rgba(249,250,252,.12); }
+  .popup-actions { position: relative; z-index: 1; display: flex; align-items: center; gap: 6px; flex: 0 0 auto; min-height: 40px; padding: 6px 10px 8px; border-top: 1px solid rgba(87,94,108,.09); background: transparent; }
   .popup-actions button { min-width: 52px; padding: 5px 9px; border: 0; border-radius: 8px; font-size: 9px; font-weight: 400; box-shadow: inset 0 1px 0 rgba(255,255,255,.22); transition: transform .15s ease, background .15s ease; }
   .popup-actions button:active:not(:disabled) { transform: translateY(1px); }
   .popup-actions .primary { background: rgba(42,44,51,.84); color: rgba(255,255,255,.94); }

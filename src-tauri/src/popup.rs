@@ -73,18 +73,40 @@ impl PopupWindow {
         #[cfg(target_os = "macos")]
         {
             let effect_window = window.clone();
-            app.run_on_main_thread(move || {
-                let _ = window_vibrancy::clear_vibrancy(&effect_window);
-                if let Err(error) = window_vibrancy::apply_vibrancy(
-                    &effect_window,
-                    window_vibrancy::NSVisualEffectMaterial::Popover,
-                    Some(window_vibrancy::NSVisualEffectState::Active),
-                    Some(16.0),
-                ) {
-                    log::warn!("could not apply popup vibrancy: {error}");
-                }
-            })
-            .map_err(|error| error.to_string())?;
+            window
+                .with_webview(move |webview| unsafe {
+                    use objc2_app_kit::NSView;
+                    use window_vibrancy::{
+                        LiquidGlassOptions, NSGlassEffectViewStyle, NSVisualEffectMaterial,
+                        NSVisualEffectState,
+                    };
+
+                    let content_view: &NSView = &*webview.inner().cast();
+                    let _ = window_vibrancy::clear_liquid_glass(&effect_window);
+                    let _ = window_vibrancy::clear_vibrancy(&effect_window);
+
+                    let options = LiquidGlassOptions::new(NSGlassEffectViewStyle::Clear)
+                        .radius(16.0)
+                        .opaque(false)
+                        .content_view(content_view);
+
+                    if let Err(glass_error) =
+                        window_vibrancy::apply_liquid_glass(&effect_window, options)
+                    {
+                        log::info!(
+                            "native Liquid Glass unavailable ({glass_error}); using vibrancy fallback"
+                        );
+                        if let Err(vibrancy_error) = window_vibrancy::apply_vibrancy(
+                            &effect_window,
+                            NSVisualEffectMaterial::Popover,
+                            Some(NSVisualEffectState::Active),
+                            Some(16.0),
+                        ) {
+                            log::warn!("could not apply popup glass fallback: {vibrancy_error}");
+                        }
+                    }
+                })
+                .map_err(|error| error.to_string())?;
         }
 
         window.set_focus().map_err(|error| error.to_string())?;
