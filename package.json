@@ -15,7 +15,9 @@
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-clipboard-manager": "^2",
     "@tauri-apps/plugin-global-shortcut": "^2",
-    "@tauri-apps/plugin-opener": "^2"
+    "@tauri-apps/plugin-opener": "^2",
+    "dompurify": "^3.4.14",
+    "marked": "^18.0.11"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
