@@ -37,6 +37,9 @@ impl PopupWindow {
         let position = popup_position(app)?;
         let window = if let Some(window) = app.get_webview_window(POPUP_LABEL) {
             window
+                .set_focusable(false)
+                .map_err(|error| error.to_string())?;
+            window
                 .set_size(LogicalSize::new(POPUP_WIDTH, POPUP_HEIGHT))
                 .map_err(|error| error.to_string())?;
             window
@@ -61,7 +64,8 @@ impl PopupWindow {
             .always_on_top(true)
             .skip_taskbar(true)
             .shadow(true)
-            .focused(true)
+            .focusable(false)
+            .focused(false)
             .build()
             .map_err(|error| error.to_string())?;
             window
@@ -109,7 +113,6 @@ impl PopupWindow {
                 .map_err(|error| error.to_string())?;
         }
 
-        window.set_focus().map_err(|error| error.to_string())?;
         let _ = window.emit("popup-reset", ());
         Ok(())
     }
