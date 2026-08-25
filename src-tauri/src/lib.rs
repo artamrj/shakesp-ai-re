@@ -8,7 +8,7 @@ use std::{
     io::ErrorKind,
     path::PathBuf,
     sync::{Mutex, OnceLock},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use ai::{default_system_prompt, stream_chat, AiConfig};
@@ -26,6 +26,16 @@ const DEFAULT_MODEL: &str = "gpt-4o-mini";
 const KEYCHAIN_SERVICE: &str = "com.artamrj.shakespaire";
 const KEYCHAIN_ACCOUNT: &str = "ai-api-key";
 const SETTINGS_FILE: &str = "ai-settings.json";
+const STREAM_MAX_ATTEMPTS: usize = 3;
+const STREAM_RETRY_DELAYS_MS: [u64; STREAM_MAX_ATTEMPTS - 1] = [250, 700];
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StreamRetryEvent {
+    attempt: usize,
+    max_attempts: usize,
+    message: String,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 struct PersistedAiConfig {
@@ -237,30 +247,69 @@ async fn stream_ai_text(app: AppHandle, selected_text: String) -> Result<(), Str
         .lock()
         .map_err(|error| error.to_string())?
         .clone();
-    let mut stream = stream_chat(&config, &default_system_prompt(), &selected_text).await?;
+    let system_prompt = default_system_prompt();
+    let mut emitted_content = false;
 
-    while let Some(result) = stream.next().await {
-        if !PopupWindow::stream_is_current(stream_generation) {
-            log::info!("superseded AI stream stopped");
-            return Ok(());
-        }
-        match result {
-            Ok(content) if !content.is_empty() => {
-                if let Some(popup) = app.get_webview_window("popup") {
-                    let _ = popup.emit("ai-stream-chunk", content);
-                } else {
-                    break;
-                }
+    'attempts: for attempt in 1..=STREAM_MAX_ATTEMPTS {
+        let stream_result = tokio::select! {
+            _ = PopupWindow::wait_for_stream_cancel(stream_generation) => {
+                log::info!("AI request cancelled before streaming began");
+                return Ok(());
             }
-            Ok(_) => {}
+            result = stream_chat(&config, &system_prompt, &selected_text) => result,
+        };
+
+        let mut stream = match stream_result {
+            Ok(stream) => stream,
             Err(error) => {
-                log::error!("AI stream error: {error}");
-                if PopupWindow::stream_is_current(stream_generation) {
+                if error.is_retryable() && attempt < STREAM_MAX_ATTEMPTS {
+                    emit_stream_retry(&app, attempt + 1, error.to_string());
+                    if wait_for_retry_or_cancel(stream_generation, attempt).await {
+                        continue 'attempts;
+                    }
+                    return Ok(());
+                }
+                return surface_stream_error(&app, stream_generation, error.to_string());
+            }
+        };
+
+        loop {
+            let result = tokio::select! {
+                _ = PopupWindow::wait_for_stream_cancel(stream_generation) => {
+                    // Dropping the receiver wakes sender.closed() in ai.rs, which
+                    // immediately drops the response body and its network socket.
+                    log::info!("in-flight AI stream cancelled");
+                    return Ok(());
+                }
+                result = stream.next() => result,
+            };
+
+            match result {
+                Some(Ok(content)) if !content.is_empty() => {
+                    emitted_content = true;
                     if let Some(popup) = app.get_webview_window("popup") {
-                        let _ = popup.emit("ai-stream-error", &error);
+                        let _ = popup.emit("ai-stream-chunk", content);
+                    } else {
+                        return Ok(());
                     }
                 }
-                return Err(error);
+                Some(Ok(_)) => {}
+                Some(Err(error))
+                    if error.is_retryable()
+                        && !emitted_content
+                        && attempt < STREAM_MAX_ATTEMPTS =>
+                {
+                    emit_stream_retry(&app, attempt + 1, error.to_string());
+                    drop(stream);
+                    if wait_for_retry_or_cancel(stream_generation, attempt).await {
+                        continue 'attempts;
+                    }
+                    return Ok(());
+                }
+                Some(Err(error)) => {
+                    return surface_stream_error(&app, stream_generation, error.to_string());
+                }
+                None => break 'attempts,
             }
         }
     }
@@ -272,6 +321,42 @@ async fn stream_ai_text(app: AppHandle, selected_text: String) -> Result<(), Str
     }
     log::info!("AI stream completed");
     Ok(())
+}
+
+fn emit_stream_retry(app: &AppHandle, attempt: usize, message: String) {
+    log::warn!("AI stream attempt {} failed: {message}", attempt - 1);
+    if let Some(popup) = app.get_webview_window("popup") {
+        let _ = popup.emit(
+            "ai-stream-retry",
+            StreamRetryEvent {
+                attempt,
+                max_attempts: STREAM_MAX_ATTEMPTS,
+                message,
+            },
+        );
+    }
+}
+
+async fn wait_for_retry_or_cancel(stream_generation: u64, failed_attempt: usize) -> bool {
+    let delay = Duration::from_millis(STREAM_RETRY_DELAYS_MS[failed_attempt - 1]);
+    tokio::select! {
+        _ = PopupWindow::wait_for_stream_cancel(stream_generation) => false,
+        _ = tokio::time::sleep(delay) => true,
+    }
+}
+
+fn surface_stream_error(
+    app: &AppHandle,
+    stream_generation: u64,
+    error: String,
+) -> Result<(), String> {
+    log::error!("AI stream error: {error}");
+    if PopupWindow::stream_is_current(stream_generation) {
+        if let Some(popup) = app.get_webview_window("popup") {
+            let _ = popup.emit("ai-stream-error", &error);
+        }
+    }
+    Err(error)
 }
 
 #[tauri::command]
@@ -364,10 +449,18 @@ fn setup_click_away(app: &AppHandle) {
     use std::ptr::NonNull;
 
     use block2::RcBlock;
-    use objc2_app_kit::{NSEvent, NSEventMask};
+    use objc2_app_kit::{NSEvent, NSEventMask, NSEventType};
+
+    const MACOS_ESCAPE_KEY_CODE: u16 = 53;
 
     let popup_app = app.clone();
-    let handler = RcBlock::new(move |_event: NonNull<NSEvent>| {
+    let handler = RcBlock::new(move |event: NonNull<NSEvent>| {
+        let event = unsafe { event.as_ref() };
+        let should_dismiss =
+            event.r#type() != NSEventType::KeyDown || event.keyCode() == MACOS_ESCAPE_KEY_CODE;
+        if !should_dismiss {
+            return;
+        }
         if let Some(popup) = popup_app.get_webview_window("popup") {
             if popup.is_visible().unwrap_or(false) {
                 let _ = PopupWindow::close(&popup_app);
@@ -375,13 +468,15 @@ fn setup_click_away(app: &AppHandle) {
         }
     });
 
-    let mask =
-        NSEventMask::LeftMouseDown | NSEventMask::RightMouseDown | NSEventMask::OtherMouseDown;
+    let mask = NSEventMask::LeftMouseDown
+        | NSEventMask::RightMouseDown
+        | NSEventMask::OtherMouseDown
+        | NSEventMask::KeyDown;
     let monitor = NSEvent::addGlobalMonitorForEventsMatchingMask_handler(mask, &handler);
     if let Some(monitor) = monitor {
         // The monitor should live for the duration of this utility process.
         std::mem::forget(monitor);
-        log::info!("global click-away monitor installed");
+        log::info!("global click-away and Escape monitor installed");
     } else {
         log::warn!("could not install global click-away monitor");
     }

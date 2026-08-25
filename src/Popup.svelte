@@ -10,6 +10,8 @@
   let outputText = $state("");
   let popupError = $state("");
   let isStreaming = $state(false);
+  let streamStatus = $state("Connecting");
+  let retryMessage = $state("");
   let isApplying = $state(false);
   let copyState = $state<"idle" | "copied" | "error">("idle");
   let startTimer: number | undefined;
@@ -21,6 +23,12 @@
   const platform = new URLSearchParams(window.location.search).get("platform") ?? "unknown";
   let renderedMarkdown = $derived(renderMarkdown(outputText, isStreaming));
 
+  interface StreamRetryEvent {
+    attempt: number;
+    maxAttempts: number;
+    message: string;
+  }
+
   onMount(() => {
     const unlisteners: UnlistenFn[] = [];
     let disposed = false;
@@ -28,16 +36,24 @@
     async function setup() {
       unlisteners.push(
         await listen<string>("ai-stream-chunk", (event) => {
+          streamStatus = "Writing";
+          retryMessage = "";
           queueOutput(event.payload);
+        }),
+        await listen<StreamRetryEvent>("ai-stream-retry", (event) => {
+          streamStatus = `Retrying ${event.payload.attempt}/${event.payload.maxAttempts}`;
+          retryMessage = event.payload.message;
         }),
         await listen<string>("ai-stream-error", (event) => {
           flushOutput();
           popupError = event.payload;
           isStreaming = false;
+          retryMessage = "";
         }),
         await listen("ai-stream-done", () => {
           flushOutput();
           isStreaming = false;
+          retryMessage = "";
           void invoke("debug_e2e_report", {
             selectedText,
             outputText,
@@ -119,6 +135,8 @@
     }
     popupError = "";
     isStreaming = false;
+    streamStatus = "Connecting";
+    retryMessage = "";
     isApplying = false;
     copyState = "idle";
 
@@ -164,6 +182,13 @@
   }
 
   async function closePopup() {
+    requestGeneration += 1;
+    isStreaming = false;
+    retryMessage = "";
+    if (startTimer !== undefined) {
+      window.clearTimeout(startTimer);
+      startTimer = undefined;
+    }
     await invoke("close_popup");
   }
 
@@ -187,7 +212,7 @@
       <strong>Proofread</strong>
     </div>
     {#if isStreaming}
-      <span class="stream-status"><i></i>Writing</span>
+      <span class="stream-status"><i></i>{streamStatus}</span>
     {:else if outputText && !popupError}
       <span class="done-status">
         <svg viewBox="0 0 12 12" aria-hidden="true"><path d="m2.5 6 2.1 2.1 4.9-4.8" /></svg>
@@ -205,10 +230,16 @@
     {:else if !popupError}
       <div class="skeleton" aria-label="Preparing your proofread result"><i></i><i></i><i></i></div>
     {/if}
+    {#if isStreaming && retryMessage && !outputText}
+      <p class="retry-note">{retryMessage}</p>
+    {/if}
     {#if popupError}
       <div class="error" role="alert">
         <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8" /><path d="M10 6v5m0 3h.01" /></svg>
-        <p>{popupError}</p>
+        <div>
+          <p>{popupError}</p>
+          <button onclick={startProofread}>Try again</button>
+        </div>
       </div>
     {/if}
   </section>
@@ -270,9 +301,13 @@
   .skeleton i { display: block; height: 10px; border-radius: 999px; background: linear-gradient(90deg, rgba(119,127,143,.13) 20%, rgba(119,127,143,.23) 40%, rgba(119,127,143,.13) 60%); background-size: 300% 100%; animation: shimmer 1.35s ease infinite; }
   .skeleton i:nth-child(2) { width: 92%; }
   .skeleton i:nth-child(3) { width: 54%; }
+  .retry-note { margin: 9px 0 0; color: rgba(68,72,82,.58); font-size: 9.5px; font-weight: 300; line-height: 1.35; }
   .error { display: flex; align-items: flex-start; gap: 10px; padding: 12px 13px; border: 1px solid rgba(189,74,64,.13); border-radius: 11px; background: rgba(244,92,81,.08); color: #a43d35; }
   .error svg { flex: 0 0 auto; width: 18px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.6; }
+  .error > div { min-width: 0; }
   .error p { margin: 0; font-size: 12px; font-weight: 300; line-height: 1.45; }
+  .error button { margin: 8px 0 0; padding: 4px 8px; border: 0; border-radius: 7px; background: rgba(164,61,53,.11); color: inherit; font-size: 9px; font-weight: 400; cursor: pointer; }
+  .error button:hover { background: rgba(164,61,53,.17); }
   .popup-actions { position: relative; z-index: 1; display: flex; align-items: center; gap: 6px; flex: 0 0 auto; min-height: 40px; padding: 6px 10px 8px; border-top: 1px solid rgba(87,94,108,.09); }
   .popup-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: 52px; padding: 5px 9px; border: 0; border-radius: 8px; font-size: 9px; font-weight: 400; box-shadow: inset 0 1px 0 rgba(255,255,255,.22); cursor: pointer; transition: transform .15s ease, background .15s ease; }
   .popup-actions button > svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.25; }

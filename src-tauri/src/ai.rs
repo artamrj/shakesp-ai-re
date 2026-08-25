@@ -3,6 +3,38 @@ use serde_json::json;
 use tokio::sync::mpsc;
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 
+const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+const RESPONSE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+const ERROR_BODY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+const STREAM_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+
+#[derive(Debug, Clone)]
+pub struct AiError {
+    message: String,
+    retryable: bool,
+}
+
+impl AiError {
+    fn new(message: impl Into<String>, retryable: bool) -> Self {
+        Self {
+            message: message.into(),
+            retryable,
+        }
+    }
+
+    pub fn is_retryable(&self) -> bool {
+        self.retryable
+    }
+}
+
+impl std::fmt::Display for AiError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for AiError {}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiConfig {
     pub base_url: String,
@@ -117,16 +149,22 @@ pub async fn stream_chat(
     config: &AiConfig,
     system_prompt: &str,
     selected_text: &str,
-) -> Result<ReceiverStream<Result<String, String>>, String> {
+) -> Result<ReceiverStream<Result<String, AiError>>, AiError> {
     if config.base_url.trim().is_empty() {
-        return Err("API base URL is empty".to_string());
+        return Err(AiError::new("API base URL is empty.", false));
     }
     if config.model.trim().is_empty() {
-        return Err("model is empty".to_string());
+        return Err(AiError::new("AI model is empty.", false));
     }
 
     let url = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .connect_timeout(CONNECT_TIMEOUT)
+        .build()
+        .map_err(|error| {
+            log::error!("could not create AI HTTP client: {error}");
+            AiError::new("Could not prepare the AI connection.", true)
+        })?;
     let mut request = client.post(url).json(&json!({
         "model": config.model,
         "messages": [
@@ -139,22 +177,60 @@ pub async fn stream_chat(
         request = request.bearer_auth(config.api_key.trim());
     }
 
-    let response = request
-        .send()
+    let response = tokio::time::timeout(RESPONSE_TIMEOUT, request.send())
         .await
-        .map_err(|error| format!("AI request failed: {error}"))?;
+        .map_err(|_| AiError::new("The AI service took too long to respond.", true))?
+        .map_err(|error| {
+            log::warn!("AI request failed: {error}");
+            if error.is_timeout() {
+                AiError::new("The AI service timed out before responding.", true)
+            } else if error.is_connect() {
+                AiError::new("Could not connect to the AI service.", true)
+            } else {
+                AiError::new(
+                    "The AI request failed. Check your connection and endpoint.",
+                    true,
+                )
+            }
+        })?;
     let status = response.status();
     if !status.is_success() {
-        let body = response.text().await.unwrap_or_default();
+        let body = tokio::time::timeout(ERROR_BODY_TIMEOUT, response.text())
+            .await
+            .ok()
+            .and_then(Result::ok)
+            .unwrap_or_default();
         let detail = serde_json::from_str::<serde_json::Value>(&body)
             .ok()
             .and_then(|value| value.pointer("/error/message")?.as_str().map(str::to_owned))
             .unwrap_or_else(|| body.trim().to_string());
-        return Err(if detail.is_empty() {
-            format!("AI endpoint returned {status}")
-        } else {
-            format!("AI endpoint returned {status}: {detail}")
-        });
+        let detail = detail.chars().take(240).collect::<String>();
+        let (message, retryable) = match status.as_u16() {
+            401 => (
+                "Authentication failed. Check your API key.".to_string(),
+                false,
+            ),
+            403 => (
+                "The AI service denied access. Check your API key and model permissions."
+                    .to_string(),
+                false,
+            ),
+            404 => (
+                "The AI endpoint or model was not found. Check your URL and model.".to_string(),
+                false,
+            ),
+            408 | 429 => (
+                "The AI service is busy or rate-limited. Please try again.".to_string(),
+                true,
+            ),
+            500..=599 => (
+                format!("The AI service is temporarily unavailable ({status})."),
+                true,
+            ),
+            _ if detail.is_empty() => (format!("The AI service returned {status}."), false),
+            _ => (format!("The AI service returned {status}: {detail}"), false),
+        };
+        return Err(AiError::new(message, retryable));
     }
 
     let (sender, receiver) = mpsc::channel(32);
@@ -162,24 +238,48 @@ pub async fn stream_chat(
         let mut bytes = response.bytes_stream();
         let mut decoder = SseDecoder::default();
 
-        while let Some(next) = bytes.next().await {
+        loop {
+            let next = tokio::select! {
+                _ = sender.closed() => return,
+                next = tokio::time::timeout(STREAM_IDLE_TIMEOUT, bytes.next()) => next,
+            };
+
             match next {
-                Ok(chunk) => {
+                Err(_) => {
+                    let _ = sender
+                        .send(Err(AiError::new(
+                            "The AI stream stopped responding. Please try again.",
+                            true,
+                        )))
+                        .await;
+                    return;
+                }
+                Ok(Some(Ok(chunk))) => {
                     for event in decoder.push(&chunk) {
+                        let event = event.map_err(|message| AiError::new(message, false));
                         if sender.send(event).await.is_err() {
                             return;
                         }
                     }
                 }
-                Err(error) => {
-                    let _ = sender.send(Err(format!("AI stream failed: {error}"))).await;
+                Ok(Some(Err(error))) => {
+                    log::warn!("AI stream failed: {error}");
+                    let message = if error.is_timeout() {
+                        "The AI stream timed out. Please try again."
+                    } else {
+                        "The connection to the AI service was interrupted."
+                    };
+                    let _ = sender.send(Err(AiError::new(message, true))).await;
                     return;
                 }
+                Ok(None) => break,
             }
         }
 
         if let Some(event) = decoder.finish() {
-            let _ = sender.send(event).await;
+            let _ = sender
+                .send(event.map_err(|message| AiError::new(message, false)))
+                .await;
         }
     });
 

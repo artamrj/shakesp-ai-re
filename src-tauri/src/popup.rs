@@ -1,7 +1,8 @@
 use std::sync::{
     atomic::{AtomicU64, Ordering},
-    Mutex,
+    Mutex, OnceLock,
 };
+use tokio::sync::watch;
 
 use tauri::{
     window::Color, AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, Runtime, WebviewUrl,
@@ -26,6 +27,14 @@ static POPUP_CONTEXT: Mutex<PopupContext> = Mutex::new(PopupContext {
     source_application: None,
 });
 static STREAM_GENERATION: AtomicU64 = AtomicU64::new(0);
+static STREAM_STATE: OnceLock<watch::Sender<u64>> = OnceLock::new();
+
+fn stream_state() -> &'static watch::Sender<u64> {
+    STREAM_STATE.get_or_init(|| {
+        let (sender, _) = watch::channel(STREAM_GENERATION.load(Ordering::SeqCst));
+        sender
+    })
+}
 
 pub struct PopupWindow;
 
@@ -82,15 +91,30 @@ impl PopupWindow {
     }
 
     pub fn begin_stream() -> u64 {
-        STREAM_GENERATION.fetch_add(1, Ordering::SeqCst) + 1
+        let generation = STREAM_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+        stream_state().send_replace(generation);
+        generation
     }
 
     pub fn stream_is_current(generation: u64) -> bool {
         STREAM_GENERATION.load(Ordering::SeqCst) == generation
     }
 
+    pub async fn wait_for_stream_cancel(generation: u64) {
+        let mut receiver = stream_state().subscribe();
+        loop {
+            if *receiver.borrow_and_update() != generation {
+                return;
+            }
+            if receiver.changed().await.is_err() {
+                return;
+            }
+        }
+    }
+
     fn cancel_stream() {
-        STREAM_GENERATION.fetch_add(1, Ordering::SeqCst);
+        let generation = STREAM_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+        stream_state().send_replace(generation);
     }
 
     pub fn selected_text() -> Result<String, String> {
