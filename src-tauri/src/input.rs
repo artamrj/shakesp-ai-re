@@ -1,3 +1,4 @@
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::process::Command;
 
 #[derive(Clone, Copy, Debug)]
@@ -165,9 +166,113 @@ fn simulate_command_key(key: &str) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+fn simulate_command_key(key: &str) -> Result<(), String> {
+    use std::mem::size_of;
+
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
+        VIRTUAL_KEY, VK_C, VK_CONTROL, VK_V,
+    };
+
+    fn keyboard_input(key: VIRTUAL_KEY, flags: KEYBD_EVENT_FLAGS) -> INPUT {
+        INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: key,
+                    dwFlags: flags,
+                    ..Default::default()
+                },
+            },
+        }
+    }
+
+    let key = match key {
+        "c" => VK_C,
+        "v" => VK_V,
+        _ => return Err(format!("unsupported simulated key: {key}")),
+    };
+    let inputs = [
+        keyboard_input(VK_CONTROL, KEYBD_EVENT_FLAGS::default()),
+        keyboard_input(key, KEYBD_EVENT_FLAGS::default()),
+        keyboard_input(key, KEYEVENTF_KEYUP),
+        keyboard_input(VK_CONTROL, KEYEVENTF_KEYUP),
+    ];
+    let inserted = unsafe { SendInput(&inputs, size_of::<INPUT>() as i32) };
+    if inserted == inputs.len() as u32 {
+        Ok(())
+    } else {
+        Err(format!(
+            "Windows SendInput inserted {inserted}/{} keyboard events; input may be blocked by another process or by a higher-integrity application",
+            inputs.len()
+        ))
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn simulate_command_key(key: &str) -> Result<(), String> {
+    fn run_tool(program: &str, arguments: &[&str]) -> Result<(), String> {
+        let output = Command::new(program)
+            .args(arguments)
+            .output()
+            .map_err(|error| {
+                if error.kind() == std::io::ErrorKind::NotFound {
+                    format!("{program} is not installed")
+                } else {
+                    format!("could not start {program}: {error}")
+                }
+            })?;
+        if output.status.success() {
+            return Ok(());
+        }
+
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        Err(if detail.is_empty() {
+            format!("{program} exited with {}", output.status)
+        } else {
+            format!("{program} failed: {detail}")
+        })
+    }
+
+    if !matches!(key, "c" | "v") {
+        return Err(format!("unsupported simulated key: {key}"));
+    }
+
+    let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some()
+        || std::env::var("XDG_SESSION_TYPE")
+            .is_ok_and(|session| session.eq_ignore_ascii_case("wayland"));
+    let x11 = std::env::var_os("DISPLAY").is_some();
+    let mut failures = Vec::new();
+
+    if wayland {
+        match run_tool("wtype", &["-M", "ctrl", key, "-m", "ctrl"]) {
+            Ok(()) => return Ok(()),
+            Err(error) => failures.push(error),
+        }
+    }
+
+    if x11 {
+        let shortcut = format!("ctrl+{key}");
+        match run_tool("xdotool", &["key", "--clearmodifiers", &shortcut]) {
+            Ok(()) => return Ok(()),
+            Err(error) => failures.push(error),
+        }
+    }
+
+    if failures.is_empty() {
+        Err("no supported Linux display session detected; set WAYLAND_DISPLAY for wtype or DISPLAY for xdotool".to_string())
+    } else {
+        Err(format!(
+            "could not simulate Ctrl+{key}: {}. Install wtype for Wayland or xdotool for X11",
+            failures.join("; ")
+        ))
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 fn simulate_command_key(_key: &str) -> Result<(), String> {
-    Err("native copy and paste simulation is currently supported only on macOS".to_string())
+    Err("copy and paste simulation is not supported on this platform".to_string())
 }
 
 pub fn simulate_copy() -> Result<(), String> {

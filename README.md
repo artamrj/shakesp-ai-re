@@ -28,6 +28,17 @@ On macOS, allow shakespAIre to control the computer under **System Settings → 
 → Accessibility**. Selection capture and replacement use native Cmd+C/Cmd+V events and will not
 work until that permission is granted.
 
+Windows uses the native `SendInput` API and requires no helper program. It cannot inject into an
+application running with higher privileges; run both applications at the same integrity level.
+
+Linux requires one input helper:
+
+- **Wayland:** install `wtype` (preferred).
+- **X11:** install `xdotool`.
+
+On Wayland, `xdotool` is only a limited XWayland fallback and cannot control every native Wayland
+application.
+
 The API settings window accepts an OpenAI-compatible base URL, API key, and model. For local
 development they can also be supplied as `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `OPENAI_MODEL`.
 

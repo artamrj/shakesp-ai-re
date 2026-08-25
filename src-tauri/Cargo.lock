@@ -4027,6 +4027,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "window-vibrancy 0.8.0",
+ "windows",
 ]
 
 [[package]]
