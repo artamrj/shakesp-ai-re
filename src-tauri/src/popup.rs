@@ -116,7 +116,7 @@ fn create_window<R: Runtime>(
     let window = WebviewWindowBuilder::new(
         app,
         POPUP_LABEL,
-        WebviewUrl::App("index.html?view=popup".into()),
+        WebviewUrl::App(format!("index.html?view=popup&platform={}", std::env::consts::OS).into()),
     )
     .title("shakespAIre")
     .inner_size(POPUP_WIDTH, POPUP_HEIGHT)
@@ -179,7 +179,22 @@ fn apply_glass<R: Runtime>(window: &WebviewWindow<R>) -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+fn apply_glass<R: Runtime>(window: &WebviewWindow<R>) -> Result<(), String> {
+    use window_vibrancy::{apply_acrylic, apply_blur};
+
+    if let Err(acrylic_error) = apply_acrylic(window, Some((244, 246, 250, 176))) {
+        log::info!("Windows Acrylic unavailable ({acrylic_error}); using blur fallback");
+        if let Err(blur_error) = apply_blur(window, Some((244, 246, 250, 150))) {
+            log::warn!(
+                "Windows native blur unavailable ({blur_error}); using translucent CSS fallback"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn apply_glass<R: Runtime>(_window: &WebviewWindow<R>) -> Result<(), String> {
     Ok(())
 }

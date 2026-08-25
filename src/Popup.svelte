@@ -18,6 +18,7 @@
   let pendingOutput = "";
   let requestGeneration = 0;
   let resultElement: HTMLElement;
+  const platform = new URLSearchParams(window.location.search).get("platform") ?? "unknown";
   let renderedMarkdown = $derived(renderMarkdown(outputText, isStreaming));
 
   onMount(() => {
@@ -180,7 +181,7 @@
   }
 </script>
 
-<main class="popup-shell">
+<main class="popup-shell" class:platform-windows={platform === "windows"} class:platform-linux={platform === "linux"}>
   <header class="popup-header">
     <div class="popup-title">
       <strong>Proofread</strong>
@@ -233,6 +234,8 @@
   :global(*) { box-sizing: border-box; }
   :global(button) { font: inherit; }
   .popup-shell { position: relative; display: flex; flex-direction: column; height: 100vh; overflow: hidden; border: 1px solid rgba(255,255,255,.22); border-radius: 16px; background: rgba(255,255,255,.025); box-shadow: inset 0 1px 0 rgba(255,255,255,.28); font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; font-synthesis: none; font-weight: 300; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+  .popup-shell.platform-windows { border-color: rgba(255,255,255,.32); background: linear-gradient(135deg, rgba(255,255,255,.12), rgba(230,236,246,.07)); box-shadow: inset 0 1px 0 rgba(255,255,255,.34); font-family: "Segoe UI Variable Text", "Segoe UI", -apple-system, sans-serif; }
+  .popup-shell.platform-linux { border-color: rgba(255,255,255,.48); background: linear-gradient(135deg, rgba(250,252,255,.76), rgba(232,237,245,.62)); box-shadow: inset 0 1px 0 rgba(255,255,255,.58); font-family: Inter, "Noto Sans", Ubuntu, Cantarell, sans-serif; backdrop-filter: blur(22px) saturate(1.22); -webkit-backdrop-filter: blur(22px) saturate(1.22); }
   .popup-header { position: relative; z-index: 1; display: flex; align-items: center; flex: 0 0 auto; height: 36px; padding: 0 9px 0 14px; border-bottom: 1px solid rgba(87,94,108,.09); user-select: none; }
   .popup-title { display: flex; align-items: center; color: rgba(28,29,33,.80); font-size: 12px; font-weight: 400; }
   .popup-title strong { font-weight: 400; }
