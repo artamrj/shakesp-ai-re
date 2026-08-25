@@ -9,6 +9,8 @@ const POPUP_LABEL: &str = "popup";
 const POPUP_WIDTH: f64 = 320.0;
 const POPUP_HEIGHT: f64 = 170.0;
 const POPUP_GAP: f64 = 8.0;
+const POPUP_EDGE_MARGIN: f64 = 10.0;
+const AUTO_HIDE_DOCK_CLEARANCE: f64 = 88.0;
 
 #[derive(Default)]
 struct PopupContext {
@@ -40,6 +42,9 @@ impl PopupWindow {
                 .set_focusable(false)
                 .map_err(|error| error.to_string())?;
             window
+                .set_resizable(false)
+                .map_err(|error| error.to_string())?;
+            window
                 .set_size(LogicalSize::new(POPUP_WIDTH, POPUP_HEIGHT))
                 .map_err(|error| error.to_string())?;
             window
@@ -60,7 +65,7 @@ impl PopupWindow {
             .decorations(false)
             .transparent(true)
             .background_color(Color(0, 0, 0, 0))
-            .resizable(true)
+            .resizable(false)
             .always_on_top(true)
             .skip_taskbar(true)
             .shadow(true)
@@ -149,6 +154,17 @@ fn popup_position<R: Runtime>(app: &AppHandle<R>) -> Result<PhysicalPosition<i32
     if let Some(monitor) = monitor {
         let work_area = monitor.work_area();
         let scale = monitor.scale_factor();
+        let monitor_position = monitor.position();
+        let monitor_size = monitor.size();
+        let monitor_bottom = monitor_position.y as f64 + monitor_size.height as f64;
+        let (area_x, area_y, area_width, area_height) = adjusted_work_area(
+            work_area.position.x as f64,
+            work_area.position.y as f64,
+            work_area.size.width as f64,
+            work_area.size.height as f64,
+            monitor_bottom,
+            scale,
+        );
         let (anchor_x, anchor_top, anchor_bottom) = selection
             .map(|bounds| {
                 (
@@ -162,10 +178,10 @@ fn popup_position<R: Runtime>(app: &AppHandle<R>) -> Result<PhysicalPosition<i32
             anchor_x,
             anchor_top,
             anchor_bottom,
-            work_area.position.x as f64,
-            work_area.position.y as f64,
-            work_area.size.width as f64,
-            work_area.size.height as f64,
+            area_x,
+            area_y,
+            area_width,
+            area_height,
             POPUP_WIDTH * scale,
             POPUP_HEIGHT * scale,
         );
@@ -176,6 +192,31 @@ fn popup_position<R: Runtime>(app: &AppHandle<R>) -> Result<PhysicalPosition<i32
             (cursor.y + POPUP_GAP).round() as i32,
         ))
     }
+}
+
+fn adjusted_work_area(
+    area_x: f64,
+    area_y: f64,
+    area_width: f64,
+    area_height: f64,
+    monitor_bottom: f64,
+    scale: f64,
+) -> (f64, f64, f64, f64) {
+    let margin = POPUP_EDGE_MARGIN * scale;
+    let work_area_bottom = area_y + area_height;
+    let reaches_screen_bottom = (monitor_bottom - work_area_bottom).abs() <= 4.0 * scale;
+    let dock_clearance = if reaches_screen_bottom {
+        AUTO_HIDE_DOCK_CLEARANCE * scale
+    } else {
+        0.0
+    };
+
+    (
+        area_x + margin,
+        area_y + margin,
+        (area_width - margin * 2.0).max(0.0),
+        (area_height - margin * 2.0 - dock_clearance).max(0.0),
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -203,7 +244,7 @@ fn anchored_position(
 
 #[cfg(test)]
 mod tests {
-    use super::anchored_position;
+    use super::{adjusted_work_area, anchored_position};
 
     #[test]
     fn positions_popup_below_and_right_of_cursor() {
@@ -226,6 +267,22 @@ mod tests {
         assert_eq!(
             anchored_position(-100.0, 50.0, 70.0, -1920.0, 0.0, 1920.0, 1080.0, 420.0, 240.0),
             (-420.0, 78.0)
+        );
+    }
+
+    #[test]
+    fn reserves_space_for_an_auto_hidden_dock() {
+        assert_eq!(
+            adjusted_work_area(0.0, 0.0, 1440.0, 900.0, 900.0, 1.0),
+            (10.0, 10.0, 1420.0, 792.0)
+        );
+    }
+
+    #[test]
+    fn does_not_double_reserve_space_for_a_visible_dock() {
+        assert_eq!(
+            adjusted_work_area(0.0, 24.0, 1440.0, 796.0, 900.0, 1.0),
+            (10.0, 34.0, 1420.0, 776.0)
         );
     }
 }

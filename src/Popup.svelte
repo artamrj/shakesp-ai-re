@@ -102,9 +102,9 @@
 </script>
 
 <main class="popup-shell">
-  <header class="popup-header" data-tauri-drag-region>
-    <div class="popup-title" data-tauri-drag-region>
-      <strong data-tauri-drag-region>Proofread</strong>
+  <header class="popup-header">
+    <div class="popup-title">
+      <strong>Proofread</strong>
     </div>
     {#if isStreaming}<span class="stream-status"><i></i>Working</span>{/if}
     <button class="icon-button" aria-label="Close" title="Close" onclick={closePopup}>
