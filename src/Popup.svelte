@@ -10,6 +10,8 @@
   let isStreaming = $state(false);
   let isApplying = $state(false);
   let copyState = $state<"idle" | "copied" | "error">("idle");
+  let startTimer: number | undefined;
+  let requestGeneration = 0;
 
   onMount(() => {
     const unlisteners: UnlistenFn[] = [];
@@ -32,20 +34,11 @@
             error: popupError,
           }).catch(() => {});
         }),
+        await listen("popup-reset", scheduleProofread),
       );
 
-      selectedText = await invoke<string>("get_popup_selection");
-      if (!selectedText.trim()) {
-        popupError = "No selected text was captured.";
-        return;
-      }
-
-      isStreaming = true;
-      invoke("stream_ai_text", { selectedText }).catch((error) => {
-        popupError = String(error);
-        isStreaming = false;
-      });
       window.addEventListener("keydown", handleKeydown);
+      scheduleProofread();
     }
 
     setup().catch((error) => {
@@ -54,10 +47,43 @@
 
     return () => {
       disposed = true;
+      requestGeneration += 1;
+      if (startTimer !== undefined) window.clearTimeout(startTimer);
       window.removeEventListener("keydown", handleKeydown);
       for (const unlisten of unlisteners) unlisten();
     };
   });
+
+  function scheduleProofread() {
+    if (startTimer !== undefined) window.clearTimeout(startTimer);
+    startTimer = window.setTimeout(() => {
+      startTimer = undefined;
+      void startProofread();
+    }, 0);
+  }
+
+  async function startProofread() {
+    const generation = ++requestGeneration;
+    selectedText = "";
+    outputText = "";
+    popupError = "";
+    isStreaming = false;
+    isApplying = false;
+    copyState = "idle";
+
+    try {
+      const capturedText = await invoke<string>("get_popup_selection");
+      if (generation !== requestGeneration || !capturedText.trim()) return;
+      selectedText = capturedText;
+      isStreaming = true;
+      await invoke("stream_ai_text", { selectedText });
+    } catch (error) {
+      if (generation === requestGeneration) {
+        popupError = String(error);
+        isStreaming = false;
+      }
+    }
+  }
 
   async function applyReplacement() {
     if (isStreaming || isApplying || !outputText.trim()) return;

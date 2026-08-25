@@ -76,15 +76,19 @@ pub async fn capture_selected_text<R: Runtime>(app: &AppHandle<R>) -> Result<Str
     let sentinel = format!("shakespaire-selection-{}", std::process::id());
     let capture_result = async {
         write_to_clipboard(app, &sentinel)?;
-        tokio::time::sleep(tokio::time::Duration::from_millis(40)).await;
         input::simulate_copy()?;
-        tokio::time::sleep(tokio::time::Duration::from_millis(140)).await;
 
-        let selected = read_current_clipboard(app)?;
-        if selected == sentinel || selected.trim().is_empty() {
-            Err("no text selection was captured".to_string())
-        } else {
-            Ok(selected)
+        let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_millis(240);
+        loop {
+            if let Ok(selected) = read_current_clipboard(app) {
+                if selected != sentinel && !selected.trim().is_empty() {
+                    break Ok(selected);
+                }
+            }
+            if tokio::time::Instant::now() >= deadline {
+                break Err("no text selection was captured".to_string());
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(8)).await;
         }
     }
     .await;

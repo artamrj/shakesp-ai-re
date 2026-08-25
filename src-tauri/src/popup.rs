@@ -1,8 +1,11 @@
-use std::sync::Mutex;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Mutex,
+};
 
 use tauri::{
     window::Color, AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, Runtime, WebviewUrl,
-    WebviewWindowBuilder,
+    WebviewWindow, WebviewWindowBuilder,
 };
 
 const POPUP_LABEL: &str = "popup";
@@ -22,10 +25,19 @@ static POPUP_CONTEXT: Mutex<PopupContext> = Mutex::new(PopupContext {
     selected_text: String::new(),
     source_application: None,
 });
+static STREAM_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 pub struct PopupWindow;
 
 impl PopupWindow {
+    pub fn prepare<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+        if app.get_webview_window(POPUP_LABEL).is_none() {
+            create_window(app, PhysicalPosition::new(0, 0), false)?;
+            log::info!("popup webview prewarmed");
+        }
+        Ok(())
+    }
+
     pub fn show<R: Runtime>(
         app: &AppHandle<R>,
         selected_text: &str,
@@ -35,6 +47,7 @@ impl PopupWindow {
             selected_text: selected_text.to_string(),
             source_application,
         };
+        Self::cancel_stream();
 
         let position = popup_position(app)?;
         let window = if let Some(window) = app.get_webview_window(POPUP_LABEL) {
@@ -53,80 +66,31 @@ impl PopupWindow {
             window.show().map_err(|error| error.to_string())?;
             window
         } else {
-            let window = WebviewWindowBuilder::new(
-                app,
-                POPUP_LABEL,
-                WebviewUrl::App("index.html?view=popup".into()),
-            )
-            .title("shakespAIre")
-            .inner_size(POPUP_WIDTH, POPUP_HEIGHT)
-            .min_inner_size(280.0, 145.0)
-            .position(position.x as f64, position.y as f64)
-            .decorations(false)
-            .transparent(true)
-            .background_color(Color(0, 0, 0, 0))
-            .resizable(false)
-            .always_on_top(true)
-            .skip_taskbar(true)
-            .shadow(true)
-            .focusable(false)
-            .focused(false)
-            .build()
-            .map_err(|error| error.to_string())?;
-            window
-                .set_position(position)
-                .map_err(|error| error.to_string())?;
-            window
+            create_window(app, position, true)?
         };
-
-        #[cfg(target_os = "macos")]
-        {
-            let effect_window = window.clone();
-            window
-                .with_webview(move |webview| unsafe {
-                    use objc2_app_kit::NSView;
-                    use window_vibrancy::{
-                        LiquidGlassOptions, NSGlassEffectViewStyle, NSVisualEffectMaterial,
-                        NSVisualEffectState,
-                    };
-
-                    let content_view: &NSView = &*webview.inner().cast();
-                    let _ = window_vibrancy::clear_liquid_glass(&effect_window);
-                    let _ = window_vibrancy::clear_vibrancy(&effect_window);
-
-                    let options = LiquidGlassOptions::new(NSGlassEffectViewStyle::Clear)
-                        .radius(16.0)
-                        .opaque(false)
-                        .content_view(content_view);
-
-                    if let Err(glass_error) =
-                        window_vibrancy::apply_liquid_glass(&effect_window, options)
-                    {
-                        log::info!(
-                            "native Liquid Glass unavailable ({glass_error}); using vibrancy fallback"
-                        );
-                        if let Err(vibrancy_error) = window_vibrancy::apply_vibrancy(
-                            &effect_window,
-                            NSVisualEffectMaterial::Popover,
-                            Some(NSVisualEffectState::Active),
-                            Some(16.0),
-                        ) {
-                            log::warn!("could not apply popup glass fallback: {vibrancy_error}");
-                        }
-                    }
-                })
-                .map_err(|error| error.to_string())?;
-        }
 
         let _ = window.emit("popup-reset", ());
         Ok(())
     }
 
     pub fn close<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+        Self::cancel_stream();
         if let Some(window) = app.get_webview_window(POPUP_LABEL) {
-            window.close().map_err(|error| error.to_string())?;
+            window.hide().map_err(|error| error.to_string())?;
         }
         Ok(())
+    }
+
+    pub fn begin_stream() -> u64 {
+        STREAM_GENERATION.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
+    pub fn stream_is_current(generation: u64) -> bool {
+        STREAM_GENERATION.load(Ordering::SeqCst) == generation
+    }
+
+    fn cancel_stream() {
+        STREAM_GENERATION.fetch_add(1, Ordering::SeqCst);
     }
 
     pub fn selected_text() -> Result<String, String> {
@@ -142,6 +106,82 @@ impl PopupWindow {
             .map(|context| context.source_application.clone())
             .map_err(|error| error.to_string())
     }
+}
+
+fn create_window<R: Runtime>(
+    app: &AppHandle<R>,
+    position: PhysicalPosition<i32>,
+    visible: bool,
+) -> Result<WebviewWindow<R>, String> {
+    let window = WebviewWindowBuilder::new(
+        app,
+        POPUP_LABEL,
+        WebviewUrl::App("index.html?view=popup".into()),
+    )
+    .title("shakespAIre")
+    .inner_size(POPUP_WIDTH, POPUP_HEIGHT)
+    .min_inner_size(280.0, 145.0)
+    .position(position.x as f64, position.y as f64)
+    .decorations(false)
+    .transparent(true)
+    .background_color(Color(0, 0, 0, 0))
+    .resizable(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .shadow(true)
+    .focusable(false)
+    .focused(false)
+    .visible(visible)
+    .build()
+    .map_err(|error| error.to_string())?;
+
+    window
+        .set_position(position)
+        .map_err(|error| error.to_string())?;
+    apply_glass(&window)?;
+    Ok(window)
+}
+
+#[cfg(target_os = "macos")]
+fn apply_glass<R: Runtime>(window: &WebviewWindow<R>) -> Result<(), String> {
+    let effect_window = window.clone();
+    window
+        .with_webview(move |webview| unsafe {
+            use objc2_app_kit::NSView;
+            use window_vibrancy::{
+                LiquidGlassOptions, NSGlassEffectViewStyle, NSVisualEffectMaterial,
+                NSVisualEffectState,
+            };
+
+            let content_view: &NSView = &*webview.inner().cast();
+            let _ = window_vibrancy::clear_liquid_glass(&effect_window);
+            let _ = window_vibrancy::clear_vibrancy(&effect_window);
+
+            let options = LiquidGlassOptions::new(NSGlassEffectViewStyle::Clear)
+                .radius(16.0)
+                .opaque(false)
+                .content_view(content_view);
+
+            if let Err(glass_error) = window_vibrancy::apply_liquid_glass(&effect_window, options) {
+                log::info!(
+                    "native Liquid Glass unavailable ({glass_error}); using vibrancy fallback"
+                );
+                if let Err(vibrancy_error) = window_vibrancy::apply_vibrancy(
+                    &effect_window,
+                    NSVisualEffectMaterial::Popover,
+                    Some(NSVisualEffectState::Active),
+                    Some(16.0),
+                ) {
+                    log::warn!("could not apply popup glass fallback: {vibrancy_error}");
+                }
+            }
+        })
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn apply_glass<R: Runtime>(_window: &WebviewWindow<R>) -> Result<(), String> {
+    Ok(())
 }
 
 fn popup_position<R: Runtime>(app: &AppHandle<R>) -> Result<PhysicalPosition<i32>, String> {

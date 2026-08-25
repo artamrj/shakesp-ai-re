@@ -4011,6 +4011,7 @@ dependencies = [
  "accessibility-sys",
  "block2",
  "core-foundation-sys",
+ "core-graphics",
  "env_logger",
  "keyring",
  "log",

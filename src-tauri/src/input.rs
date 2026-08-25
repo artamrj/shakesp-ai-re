@@ -141,9 +141,28 @@ fn run_osascript(script: &str, arguments: &[&str]) -> Result<String, String> {
 
 #[cfg(target_os = "macos")]
 fn simulate_command_key(key: &str) -> Result<(), String> {
-    let script =
-        format!("tell application \"System Events\" to keystroke \"{key}\" using command down");
-    run_osascript(&script, &[]).map(|_| ())
+    use core_graphics::{
+        event::{CGEvent, CGEventFlags, CGEventTapLocation, KeyCode},
+        event_source::{CGEventSource, CGEventSourceStateID},
+    };
+
+    let keycode = match key {
+        "c" => KeyCode::ANSI_C,
+        "v" => KeyCode::ANSI_V,
+        _ => return Err(format!("unsupported simulated key: {key}")),
+    };
+    let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
+        .map_err(|_| "could not create a native keyboard event source".to_string())?;
+    let key_down = CGEvent::new_keyboard_event(source.clone(), keycode, true)
+        .map_err(|_| "could not create native key-down event".to_string())?;
+    let key_up = CGEvent::new_keyboard_event(source, keycode, false)
+        .map_err(|_| "could not create native key-up event".to_string())?;
+
+    key_down.set_flags(CGEventFlags::CGEventFlagCommand);
+    key_up.set_flags(CGEventFlags::CGEventFlagCommand);
+    key_down.post(CGEventTapLocation::Session);
+    key_up.post(CGEventTapLocation::Session);
+    Ok(())
 }
 
 #[cfg(not(target_os = "macos"))]

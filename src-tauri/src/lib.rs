@@ -8,6 +8,7 @@ use std::{
     io::ErrorKind,
     path::PathBuf,
     sync::{Mutex, OnceLock},
+    time::Instant,
 };
 
 use ai::{default_system_prompt, stream_chat, AiConfig};
@@ -231,6 +232,7 @@ async fn replace_text(app: AppHandle, text: String) -> Result<(), String> {
 
 #[tauri::command]
 async fn stream_ai_text(app: AppHandle, selected_text: String) -> Result<(), String> {
+    let stream_generation = PopupWindow::begin_stream();
     let config = ai_config()
         .lock()
         .map_err(|error| error.to_string())?
@@ -238,6 +240,10 @@ async fn stream_ai_text(app: AppHandle, selected_text: String) -> Result<(), Str
     let mut stream = stream_chat(&config, &default_system_prompt(), &selected_text).await?;
 
     while let Some(result) = stream.next().await {
+        if !PopupWindow::stream_is_current(stream_generation) {
+            log::info!("superseded AI stream stopped");
+            return Ok(());
+        }
         match result {
             Ok(content) if !content.is_empty() => {
                 if let Some(popup) = app.get_webview_window("popup") {
@@ -249,16 +255,20 @@ async fn stream_ai_text(app: AppHandle, selected_text: String) -> Result<(), Str
             Ok(_) => {}
             Err(error) => {
                 log::error!("AI stream error: {error}");
-                if let Some(popup) = app.get_webview_window("popup") {
-                    let _ = popup.emit("ai-stream-error", &error);
+                if PopupWindow::stream_is_current(stream_generation) {
+                    if let Some(popup) = app.get_webview_window("popup") {
+                        let _ = popup.emit("ai-stream-error", &error);
+                    }
                 }
                 return Err(error);
             }
         }
     }
 
-    if let Some(popup) = app.get_webview_window("popup") {
-        let _ = popup.emit("ai-stream-done", ());
+    if PopupWindow::stream_is_current(stream_generation) {
+        if let Some(popup) = app.get_webview_window("popup") {
+            let _ = popup.emit("ai-stream-done", ());
+        }
     }
     log::info!("AI stream completed");
     Ok(())
@@ -302,14 +312,24 @@ fn debug_e2e_report(selected_text: String, output_text: String, error: String) {
 
 fn run_shortcut_flow(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
+        let shortcut_started = Instant::now();
         let source_application = input::frontmost_application().ok();
         let result = async {
             let selected = clipboard::capture_selected_text(&app).await?;
-            log::info!("captured {} selected characters", selected.chars().count());
+            log::info!(
+                "captured {} selected characters in {} ms",
+                selected.chars().count(),
+                shortcut_started.elapsed().as_millis()
+            );
             if let Some(main) = app.get_webview_window("main") {
                 main.hide().map_err(|error| error.to_string())?;
             }
-            PopupWindow::show(&app, &selected, source_application)
+            PopupWindow::show(&app, &selected, source_application)?;
+            log::info!(
+                "popup shown in {} ms after shortcut",
+                shortcut_started.elapsed().as_millis()
+            );
+            Ok::<(), String>(())
         }
         .await;
 
@@ -348,8 +368,10 @@ fn setup_click_away(app: &AppHandle) {
 
     let popup_app = app.clone();
     let handler = RcBlock::new(move |_event: NonNull<NSEvent>| {
-        if popup_app.get_webview_window("popup").is_some() {
-            let _ = PopupWindow::close(&popup_app);
+        if let Some(popup) = popup_app.get_webview_window("popup") {
+            if popup.is_visible().unwrap_or(false) {
+                let _ = PopupWindow::close(&popup_app);
+            }
         }
     });
 
@@ -392,6 +414,7 @@ pub fn run() {
         ])
         .setup(|app| {
             load_ai_config(app.handle())?;
+            PopupWindow::prepare(app.handle())?;
             setup_global_shortcut(app.handle())?;
             setup_click_away(app.handle());
             Ok(())
