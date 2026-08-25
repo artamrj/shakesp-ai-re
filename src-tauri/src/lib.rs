@@ -208,6 +208,36 @@ fn setup_global_shortcut(app: &AppHandle) -> Result<(), Box<dyn std::error::Erro
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
+fn setup_click_away(app: &AppHandle) {
+    use std::ptr::NonNull;
+
+    use block2::RcBlock;
+    use objc2_app_kit::{NSEvent, NSEventMask};
+
+    let popup_app = app.clone();
+    let handler = RcBlock::new(move |_event: NonNull<NSEvent>| {
+        if popup_app.get_webview_window("popup").is_some() {
+            let _ = PopupWindow::close(&popup_app);
+        }
+    });
+
+    let mask = NSEventMask::LeftMouseDown
+        | NSEventMask::RightMouseDown
+        | NSEventMask::OtherMouseDown;
+    let monitor = NSEvent::addGlobalMonitorForEventsMatchingMask_handler(mask, &handler);
+    if let Some(monitor) = monitor {
+        // The monitor should live for the duration of this utility process.
+        std::mem::forget(monitor);
+        log::info!("global click-away monitor installed");
+    } else {
+        log::warn!("could not install global click-away monitor");
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn setup_click_away(_app: &AppHandle) {}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -232,6 +262,7 @@ pub fn run() {
         ])
         .setup(|app| {
             setup_global_shortcut(app.handle())?;
+            setup_click_away(app.handle());
             Ok(())
         })
         .run(tauri::generate_context!())

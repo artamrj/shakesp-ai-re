@@ -3827,6 +3827,7 @@ name = "shakespaire"
 version = "0.1.0"
 dependencies = [
  "accessibility-sys",
+ "block2",
  "core-foundation-sys",
  "env_logger",
  "log",
