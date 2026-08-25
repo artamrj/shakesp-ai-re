@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+  import { writeText } from "@tauri-apps/plugin-clipboard-manager";
   import { onMount, tick } from "svelte";
 
   const isPopup =
@@ -21,6 +22,7 @@
   let popupError = $state("");
   let isStreaming = $state(false);
   let isApplying = $state(false);
+  let copyState = $state<"idle" | "copied" | "error">("idle");
   let isDebugE2e = $state(false);
   let debugSource = $state<HTMLTextAreaElement>();
 
@@ -137,6 +139,18 @@
     }
   }
 
+  async function copyResult() {
+    if (!outputText.trim()) return;
+    try {
+      await writeText(outputText);
+      copyState = "copied";
+      window.setTimeout(() => (copyState = "idle"), 1600);
+    } catch {
+      copyState = "error";
+      window.setTimeout(() => (copyState = "idle"), 2000);
+    }
+  }
+
   async function cancelPopup() {
     await invoke("close_popup");
   }
@@ -148,6 +162,9 @@
     } else if (event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
       event.preventDefault();
       void applyReplacement();
+    } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "c") {
+      event.preventDefault();
+      void copyResult();
     }
   }
 </script>
@@ -155,37 +172,45 @@
 {#if isPopup}
   <main class="popup-shell">
     <header class="popup-header" data-tauri-drag-region>
-      <div data-tauri-drag-region>
-        <span class="spark">✦</span>
-        <strong>shakespAIre</strong>
+      <div class="popup-title" data-tauri-drag-region>
+        <span class="title-mark" aria-hidden="true">✦</span>
+        <strong data-tauri-drag-region>Proofread</strong>
       </div>
-      <button class="icon-button" aria-label="Close" title="Close (Esc)" onclick={cancelPopup}>×</button>
+      {#if isStreaming}
+        <span class="stream-status"><i></i>Improving</span>
+      {:else if outputText}
+        <span class="complete-status">Ready</span>
+      {/if}
+      <button class="icon-button" aria-label="Close" title="Close (Esc)" onclick={cancelPopup}>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8" /></svg>
+      </button>
     </header>
 
-    <section class="selection" aria-label="Selected text">
-      <span>Original</span>
-      <p>{selectedText}</p>
-    </section>
-
     <section class="result" class:loading={isStreaming} aria-live="polite" aria-busy={isStreaming}>
-      <div class="result-label">
-        <span>Rewrite</span>
-        {#if isStreaming}<span class="stream-status"><i></i> Writing…</span>{/if}
-      </div>
       {#if outputText}
         <p>{outputText}<span class:visible={isStreaming} class="cursor"></span></p>
       {:else if !popupError}
-        <p class="placeholder">Waiting for the first words…</p>
+        <div class="skeleton" aria-label="Preparing your proofread result">
+          <i></i><i></i><i></i>
+        </div>
       {/if}
-      {#if popupError}<p class="error">{popupError}</p>{/if}
+      {#if popupError}
+        <div class="error" role="alert">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8" /><path d="M10 6v5m0 3h.01" /></svg>
+          <p>{popupError}</p>
+        </div>
+      {/if}
     </section>
 
     <footer class="popup-actions">
-      <span><kbd>Esc</kbd> cancel</span>
-      <button class="secondary" onclick={cancelPopup}>Cancel</button>
-      <button onclick={applyReplacement} disabled={isStreaming || isApplying || !outputText.trim()}>
-        {isApplying ? "Applying…" : "Replace"} <kbd>↵</kbd>
+      <button class="primary" onclick={applyReplacement} disabled={isStreaming || isApplying || !outputText.trim()} title="Replace selected text (Enter)">
+        {#if isApplying}<span class="button-spinner"></span>{/if}
+        {isApplying ? "Replacing" : "Replace"}
       </button>
+      <button class="secondary" onclick={copyResult} disabled={!outputText.trim()} title="Copy result (⌘C)">
+        {copyState === "copied" ? "Copied" : copyState === "error" ? "Copy failed" : "Copy"}
+      </button>
+      <span class="key-hint"><kbd>↵</kbd> replace · <kbd>esc</kbd> close</span>
     </footer>
   </main>
 {:else if isDebugE2e}
@@ -238,20 +263,21 @@
   :global(:root) {
     font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     color: #172033;
-    background: #f4f1eb;
+    background: #f3f5f8;
     font-synthesis: none;
   }
 
   :global(*) { box-sizing: border-box; }
   :global(button), :global(input) { font: inherit; }
+  :global(html.popup-view), :global(html.popup-view body), :global(html.popup-view #app) { background: transparent; }
 
   .settings-shell { max-width: 520px; margin: 0 auto; padding: 30px; }
   .brand { display: flex; align-items: center; gap: 13px; margin-bottom: 25px; }
-  .brand-mark, .spark { color: #8155c7; }
+  .brand-mark { color: #6857d9; }
   .brand-mark { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 13px; background: #e7dcf8; font-size: 22px; }
   h1 { margin: 0; font-family: Georgia, serif; font-size: 26px; letter-spacing: -.4px; }
   .brand p { margin: 3px 0 0; color: #697184; font-size: 13px; }
-  .config-card, .shortcut-card { border: 1px solid #ded9cf; border-radius: 14px; background: rgba(255,255,255,.8); box-shadow: 0 10px 30px rgba(48,39,27,.05); }
+  .config-card, .shortcut-card { border: 1px solid rgba(255,255,255,.9); border-radius: 18px; background: rgba(255,255,255,.72); box-shadow: 0 14px 40px rgba(35,43,70,.07); backdrop-filter: blur(18px); }
   .config-card { padding: 20px; }
   h2 { margin: 0 0 17px; font-size: 15px; }
   .field { margin-bottom: 13px; }
@@ -274,27 +300,41 @@
   .debug-e2e-shell { display: grid; place-items: center; min-height: 100vh; padding: 30px; }
   .debug-e2e-shell textarea { width: 100%; min-height: 180px; }
 
-  .popup-shell { display: flex; flex-direction: column; height: 100vh; overflow: hidden; border: 1px solid #d8d2c8; background: #fbfaf7; box-shadow: inset 0 1px rgba(255,255,255,.8); }
-  .popup-header { display: flex; justify-content: space-between; align-items: center; flex: 0 0 auto; height: 45px; padding: 0 10px 0 16px; border-bottom: 1px solid #e5e0d8; background: #f5f1eb; user-select: none; }
-  .popup-header > div { display: flex; align-items: center; gap: 7px; font-family: Georgia, serif; font-size: 14px; }
-  .icon-button { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border-radius: 7px; background: transparent; color: #757b88; font-size: 21px; font-weight: 400; }
-  .icon-button:hover { background: #e9e4dc !important; color: #303746; }
-  .selection { flex: 0 0 auto; max-height: 82px; padding: 11px 16px 12px; border-bottom: 1px solid #e7e2da; background: #f8f6f2; overflow: hidden; }
-  .selection span, .result-label > span:first-child { color: #858b98; font-size: 10px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
-  .selection p { margin: 5px 0 0; overflow: hidden; color: #656d7b; font-size: 12px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
-  .result { flex: 1 1 auto; min-height: 0; padding: 15px 17px; overflow-y: auto; }
-  .result-label { display: flex; justify-content: space-between; align-items: center; }
-  .result p { margin: 10px 0; color: #202838; font-family: Georgia, serif; font-size: 16px; line-height: 1.55; white-space: pre-wrap; }
-  .result p.placeholder { color: #a0a4ae; font-family: inherit; font-size: 13px; }
-  .result p.error { padding: 10px 11px; border-radius: 8px; background: #fae8e5; color: #a43d31; font-family: inherit; font-size: 12px; line-height: 1.4; }
-  .stream-status { display: flex; align-items: center; gap: 5px; color: #8060ae; font-size: 11px; }
-  .stream-status i { width: 6px; height: 6px; border-radius: 50%; background: #9466d1; animation: pulse 1s infinite alternate; }
-  .cursor { display: inline-block; width: 2px; height: 1em; margin-left: 2px; background: #8155c7; opacity: 0; vertical-align: -.12em; }
+  .popup-shell { display: flex; flex-direction: column; height: calc(100vh - 12px); margin: 6px; overflow: hidden; border: 1px solid rgba(255,255,255,.72); border-radius: 20px; background: linear-gradient(145deg, rgba(255,255,255,.86), rgba(245,247,251,.77)); box-shadow: 0 18px 50px rgba(18,24,40,.20), inset 0 1px rgba(255,255,255,.92); backdrop-filter: blur(28px) saturate(145%); -webkit-backdrop-filter: blur(28px) saturate(145%); }
+  .popup-header { position: relative; display: flex; align-items: center; flex: 0 0 auto; height: 58px; padding: 0 15px 0 19px; border-bottom: 1px solid rgba(112,122,143,.12); user-select: none; }
+  .popup-title { display: flex; align-items: center; gap: 9px; color: #272b34; font-size: 16px; letter-spacing: -.2px; }
+  .title-mark { display: grid; place-items: center; width: 25px; height: 25px; border: 1px solid rgba(104,87,217,.16); border-radius: 8px; background: rgba(104,87,217,.10); color: #6857d9; font-size: 14px; }
+  .icon-button { display: grid; place-items: center; width: 28px; height: 28px; margin-left: 9px; padding: 0; border-radius: 8px; background: transparent; color: #858b98; opacity: .68; }
+  .icon-button svg { width: 15px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.6; }
+  .icon-button:hover { background: rgba(30,36,50,.07) !important; color: #303746; opacity: 1; }
+  .result { flex: 1 1 auto; min-height: 0; padding: 25px 27px 20px; overflow-y: auto; scrollbar-color: rgba(95,103,120,.25) transparent; scrollbar-width: thin; }
+  .result > p { margin: 0; color: #353941; font-size: 17px; letter-spacing: -.12px; line-height: 1.62; white-space: pre-wrap; }
+  .stream-status, .complete-status { margin-left: auto; color: #717784; font-size: 11px; font-weight: 600; }
+  .stream-status { display: flex; align-items: center; gap: 6px; }
+  .stream-status i { width: 6px; height: 6px; border-radius: 50%; background: #7060df; box-shadow: 0 0 0 3px rgba(112,96,223,.10); animation: pulse 1s infinite alternate; }
+  .complete-status { color: #4e916d; }
+  .cursor { display: inline-block; width: 2px; height: 1em; margin-left: 3px; border-radius: 2px; background: #6857d9; opacity: 0; vertical-align: -.12em; }
   .cursor.visible { opacity: 1; animation: blink .7s infinite; }
-  .popup-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex: 0 0 auto; padding: 10px 13px; border-top: 1px solid #e5e0d8; background: #f5f1eb; }
-  .popup-actions > span { margin-right: auto; color: #888e9a; font-size: 10px; }
-  .popup-actions button { padding: 7px 11px; font-size: 12px; }
-  .popup-actions button kbd { margin-left: 5px; padding: 1px 4px; border-color: rgba(255,255,255,.35); background: rgba(255,255,255,.14); box-shadow: none; color: white; }
+  .skeleton { display: grid; gap: 12px; padding-top: 3px; }
+  .skeleton i { display: block; height: 10px; border-radius: 999px; background: linear-gradient(90deg, rgba(119,127,143,.13) 20%, rgba(119,127,143,.23) 40%, rgba(119,127,143,.13) 60%); background-size: 300% 100%; animation: shimmer 1.35s ease infinite; }
+  .skeleton i:nth-child(2) { width: 92%; }
+  .skeleton i:nth-child(3) { width: 54%; }
+  .error { display: flex; align-items: flex-start; gap: 10px; padding: 12px 13px; border: 1px solid rgba(189,74,64,.13); border-radius: 11px; background: rgba(244,92,81,.08); color: #a43d35; }
+  .error svg { flex: 0 0 auto; width: 18px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.6; }
+  .error p { margin: 0; font-size: 12px; line-height: 1.45; }
+  .popup-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; min-height: 62px; padding: 11px 16px; border-top: 1px solid rgba(112,122,143,.12); background: rgba(247,248,251,.48); }
+  .popup-actions button { min-width: 72px; padding: 8px 13px; border-radius: 9px; font-size: 12px; transition: transform .15s ease, background .15s ease, box-shadow .15s ease; }
+  .popup-actions button:active:not(:disabled) { transform: translateY(1px); }
+  .popup-actions .primary { background: #242731; box-shadow: 0 2px 6px rgba(25,28,37,.14); color: white; }
+  .popup-actions .primary:hover:not(:disabled) { background: #353946; }
+  .popup-actions .secondary { border-color: rgba(83,91,108,.10); background: rgba(80,88,104,.08); color: #404550; }
+  .popup-actions .secondary:hover:not(:disabled) { background: rgba(80,88,104,.13); }
+  .key-hint { margin-left: auto; color: #9a9faa; font-size: 10px; }
+  .key-hint kbd { min-width: auto; padding: 1px 4px; border-color: rgba(99,107,123,.16); border-radius: 4px; background: rgba(255,255,255,.45); box-shadow: none; color: #777d89; font-size: 9px; }
+  .button-spinner { display: inline-block; width: 10px; height: 10px; margin-right: 5px; border: 1.5px solid rgba(255,255,255,.4); border-top-color: white; border-radius: 50%; animation: spin .7s linear infinite; }
   @keyframes pulse { to { opacity: .35; transform: scale(.8); } }
   @keyframes blink { 50% { opacity: 0; } }
+  @keyframes shimmer { to { background-position: -150% 0; } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .stream-status i, .cursor.visible, .skeleton i, .button-spinner { animation: none; } }
 </style>

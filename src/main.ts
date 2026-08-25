@@ -5,6 +5,10 @@ import "./app.css";
 
 const path = window.location.pathname;
 
+if (path === "/popup" || new URLSearchParams(window.location.search).get("view") === "popup") {
+  document.documentElement.classList.add("popup-view");
+}
+
 if (path === "/popup") {
   const app = mount(Popup, {
     target: document.getElementById("app")!,

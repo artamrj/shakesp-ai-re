@@ -6,7 +6,7 @@ use tauri::{
 
 const POPUP_LABEL: &str = "popup";
 const POPUP_WIDTH: f64 = 520.0;
-const POPUP_HEIGHT: f64 = 360.0;
+const POPUP_HEIGHT: f64 = 330.0;
 const POPUP_GAP: f64 = 16.0;
 
 #[derive(Default)]
@@ -51,6 +51,7 @@ impl PopupWindow {
             .min_inner_size(360.0, 220.0)
             .position(position.x as f64, position.y as f64)
             .decorations(false)
+            .transparent(true)
             .resizable(true)
             .always_on_top(true)
             .skip_taskbar(true)
