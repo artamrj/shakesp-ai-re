@@ -58,7 +58,7 @@
   async function saveConfig() {
     try {
       await invoke("set_ai_config", { config });
-      status = "Settings saved for this session";
+      status = "Settings saved";
     } catch (error) {
       status = `Error saving settings: ${error}`;
     }
