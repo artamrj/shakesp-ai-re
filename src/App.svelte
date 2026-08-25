@@ -296,16 +296,16 @@
   .debug-e2e-shell { display: grid; place-items: center; min-height: 100vh; padding: 30px; }
   .debug-e2e-shell textarea { width: 100%; min-height: 180px; }
 
-  .popup-shell { display: flex; flex-direction: column; height: calc(100vh - 4px); margin: 2px; overflow: hidden; border: 1px solid rgba(95,103,118,.24); border-radius: 14px; background: rgba(250,251,252,.88); box-shadow: none; backdrop-filter: blur(22px) saturate(120%); -webkit-backdrop-filter: blur(22px) saturate(120%); }
-  .popup-header { position: relative; display: flex; align-items: center; flex: 0 0 auto; height: 44px; padding: 0 10px 0 15px; border-bottom: 1px solid rgba(112,122,143,.10); user-select: none; }
-  .popup-title { display: flex; align-items: center; color: #383c44; font-size: 13px; letter-spacing: -.05px; }
-  .popup-title strong { font-weight: 600; }
-  .icon-button { display: grid; place-items: center; width: 28px; height: 28px; margin-left: 9px; padding: 0; border-radius: 8px; background: transparent; color: #858b98; opacity: .68; }
-  .icon-button svg { width: 15px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.6; }
+  .popup-shell { display: flex; flex-direction: column; height: calc(100vh - 4px); margin: 2px; overflow: hidden; border: 1px solid rgba(255,255,255,.58); border-radius: 10px; background: linear-gradient(145deg, rgba(255,255,255,.56), rgba(242,245,249,.42)); box-shadow: none; font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; font-synthesis: none; font-weight: 300; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; backdrop-filter: blur(24px) saturate(130%); -webkit-backdrop-filter: blur(24px) saturate(130%); }
+  .popup-header { position: relative; display: flex; align-items: center; flex: 0 0 auto; height: 34px; padding: 0 7px 0 11px; border-bottom: 1px solid rgba(112,122,143,.09); user-select: none; }
+  .popup-title { display: flex; align-items: center; color: #41454d; font-size: 11px; font-weight: 400; letter-spacing: 0; }
+  .popup-title strong { font-weight: 400; }
+  .icon-button { display: grid; place-items: center; width: 22px; height: 22px; margin-left: 6px; padding: 0; border-radius: 5px; background: transparent; color: #858b98; opacity: .62; }
+  .icon-button svg { width: 12px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.4; }
   .icon-button:hover { background: rgba(30,36,50,.07) !important; color: #303746; opacity: 1; }
-  .result { flex: 1 1 auto; min-height: 0; padding: 17px 18px; overflow-y: auto; scrollbar-color: rgba(95,103,120,.22) transparent; scrollbar-width: thin; }
-  .result > p { margin: 0; color: #3f434b; font-size: 14px; font-weight: 400; letter-spacing: 0; line-height: 1.5; white-space: pre-wrap; }
-  .stream-status { margin-left: auto; color: #7d828c; font-size: 10px; font-weight: 400; }
+  .result { flex: 1 1 auto; min-height: 0; padding: 11px 13px; overflow-y: auto; scrollbar-color: rgba(95,103,120,.20) transparent; scrollbar-width: thin; }
+  .result > p { margin: 0; color: #474b53; font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; font-size: 12px; font-style: normal; font-variation-settings: "wght" 300; font-weight: 300 !important; letter-spacing: .01em; line-height: 1.45; white-space: pre-wrap; }
+  .stream-status { margin-left: auto; color: #7d828c; font-size: 9px; font-weight: 300; }
   .stream-status { display: flex; align-items: center; gap: 6px; }
   .stream-status i { width: 6px; height: 6px; border-radius: 50%; background: #7060df; box-shadow: 0 0 0 3px rgba(112,96,223,.10); animation: pulse 1s infinite alternate; }
   .cursor { display: inline-block; width: 2px; height: 1em; margin-left: 3px; border-radius: 2px; background: #6857d9; opacity: 0; vertical-align: -.12em; }
@@ -316,9 +316,9 @@
   .skeleton i:nth-child(3) { width: 54%; }
   .error { display: flex; align-items: flex-start; gap: 10px; padding: 12px 13px; border: 1px solid rgba(189,74,64,.13); border-radius: 11px; background: rgba(244,92,81,.08); color: #a43d35; }
   .error svg { flex: 0 0 auto; width: 18px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.6; }
-  .error p { margin: 0; font-size: 12px; line-height: 1.45; }
-  .popup-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; min-height: 48px; padding: 8px 12px; border-top: 1px solid rgba(112,122,143,.10); background: rgba(247,248,250,.40); }
-  .popup-actions button { min-width: 62px; padding: 6px 10px; border-radius: 7px; font-size: 11px; font-weight: 500; transition: transform .15s ease, background .15s ease; }
+  .error p { margin: 0; font-size: 12px; font-weight: 300; line-height: 1.45; }
+  .popup-actions { display: flex; align-items: center; gap: 5px; flex: 0 0 auto; min-height: 38px; padding: 6px 8px; border-top: 1px solid rgba(112,122,143,.09); background: rgba(247,248,250,.20); }
+  .popup-actions button { min-width: 52px; padding: 4px 8px; border-radius: 5px; font-size: 9px; font-weight: 400; transition: transform .15s ease, background .15s ease; }
   .popup-actions button:active:not(:disabled) { transform: translateY(1px); }
   .popup-actions .primary { background: #343840; box-shadow: none; color: white; }
   .popup-actions .primary:hover:not(:disabled) { background: #353946; }

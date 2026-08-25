@@ -1,12 +1,13 @@
 use std::sync::Mutex;
 
 use tauri::{
-    AppHandle, Emitter, Manager, PhysicalPosition, Runtime, WebviewUrl, WebviewWindowBuilder,
+    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, Runtime, WebviewUrl,
+    WebviewWindowBuilder,
 };
 
 const POPUP_LABEL: &str = "popup";
-const POPUP_WIDTH: f64 = 420.0;
-const POPUP_HEIGHT: f64 = 240.0;
+const POPUP_WIDTH: f64 = 320.0;
+const POPUP_HEIGHT: f64 = 170.0;
 const POPUP_GAP: f64 = 8.0;
 
 #[derive(Default)]
@@ -36,6 +37,9 @@ impl PopupWindow {
         let position = popup_position(app)?;
         let window = if let Some(window) = app.get_webview_window(POPUP_LABEL) {
             window
+                .set_size(LogicalSize::new(POPUP_WIDTH, POPUP_HEIGHT))
+                .map_err(|error| error.to_string())?;
+            window
                 .set_position(position)
                 .map_err(|error| error.to_string())?;
             window.show().map_err(|error| error.to_string())?;
@@ -48,7 +52,7 @@ impl PopupWindow {
             )
             .title("shakespAIre")
             .inner_size(POPUP_WIDTH, POPUP_HEIGHT)
-            .min_inner_size(340.0, 180.0)
+            .min_inner_size(280.0, 145.0)
             .position(position.x as f64, position.y as f64)
             .decorations(false)
             .transparent(true)
@@ -64,6 +68,16 @@ impl PopupWindow {
                 .map_err(|error| error.to_string())?;
             window
         };
+
+        #[cfg(target_os = "macos")]
+        if let Err(error) = window_vibrancy::apply_vibrancy(
+            &window,
+            window_vibrancy::NSVisualEffectMaterial::Popover,
+            Some(window_vibrancy::NSVisualEffectState::Active),
+            Some(10.0),
+        ) {
+            log::warn!("could not apply popup vibrancy: {error}");
+        }
 
         window.set_focus().map_err(|error| error.to_string())?;
         let _ = window.emit("popup-reset", ());

@@ -3819,6 +3819,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tokio",
  "tokio-stream",
+ "window-vibrancy",
 ]
 
 [[package]]
