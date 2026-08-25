@@ -3,13 +3,15 @@ import App from "./App.svelte";
 import Popup from "./Popup.svelte";
 import "./app.css";
 
-const path = window.location.pathname;
+const isPopup =
+  window.location.pathname === "/popup" ||
+  new URLSearchParams(window.location.search).get("view") === "popup";
 
-if (path === "/popup" || new URLSearchParams(window.location.search).get("view") === "popup") {
+if (isPopup) {
   document.documentElement.classList.add("popup-view");
 }
 
-if (path === "/popup") {
+if (isPopup) {
   const app = mount(Popup, {
     target: document.getElementById("app")!,
   });
