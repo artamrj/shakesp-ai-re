@@ -28,10 +28,20 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": false,
+    "publisher": "Arta",
+    "homepage": "https://github.com/artamrj/ShakespAIre",
+    "copyright": "Copyright © 2026 Arta",
+    "category": "Productivity",
+    "shortDescription": "AI writing assistance for selected text.",
+    "longDescription": "Select text in any application and use a global shortcut to proofread, copy, or replace it with an AI-improved version.",
+    "license": "MIT",
+    "licenseFile": "../LICENSE",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
+      "icons/icon.png",
       "icons/icon.icns",
       "icons/icon.ico"
     ]

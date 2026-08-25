@@ -8,6 +8,11 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
+    "bundle": "tauri build",
+    "bundle:macos": "tauri build --bundles app,dmg",
+    "bundle:windows": "tauri build --bundles nsis,msi",
+    "bundle:linux": "tauri build --bundles appimage,deb,rpm",
+    "icons": "tauri icon src-tauri/icons/icon.png",
     "tauri": "tauri"
   },
   "license": "MIT",

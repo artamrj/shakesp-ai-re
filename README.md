@@ -42,6 +42,13 @@ application.
 The API settings window accepts an OpenAI-compatible base URL, API key, and model. For local
 development they can also be supplied as `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `OPENAI_MODEL`.
 
+## Packaging
+
+Platform-specific Tauri configs produce macOS `.app`/`.dmg`, Windows NSIS/MSI, and Linux
+AppImage/DEB/RPM bundles. A tag such as `app-v0.2.0` starts the draft release workflow on native
+GitHub runners. Signing, notarization, updater keys, and release commands are documented in
+[`docs/RELEASING.md`](docs/RELEASING.md).
+
 ## Recommended IDE Setup
 
 [VS Code](https://code.visualstudio.com/) + [Svelte](https://marketplace.visualstudio.com/items?itemName=svelte.svelte-vscode) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer).
