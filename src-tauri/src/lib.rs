@@ -175,6 +175,9 @@ fn run_shortcut_flow(app: AppHandle) {
         let result = async {
             let selected = clipboard::capture_selected_text(&app).await?;
             log::info!("captured {} selected characters", selected.chars().count());
+            if let Some(main) = app.get_webview_window("main") {
+                main.hide().map_err(|error| error.to_string())?;
+            }
             PopupWindow::show(&app, &selected, source_application)
         }
         .await;
