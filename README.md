@@ -13,9 +13,9 @@ Select text in any application, press a global shortcut, and a small floating po
 
 ## Status
 
-Early development. Current milestone: scaffolded project with a working build pipeline
-(Frontend: Vite + Svelte 5 + TS · Backend: Tauri 2 + Rust with global-shortcut, clipboard-manager,
-and opener plugins wired in).
+M2 native flow implemented: the global shortcut captures selected text, restores the clipboard,
+opens a frameless popup, streams an OpenAI-compatible chat completion, and supports Enter to
+replace or Esc to cancel.
 
 ## Getting started
 
@@ -23,6 +23,13 @@ and opener plugins wired in).
 npm install
 npm run tauri dev
 ```
+
+On macOS, allow shakespAIre to control the computer under **System Settings → Privacy & Security
+→ Accessibility**. Selection capture and replacement use native Cmd+C/Cmd+V events and will not
+work until that permission is granted.
+
+The API settings window accepts an OpenAI-compatible base URL, API key, and model. For local
+development they can also be supplied as `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `OPENAI_MODEL`.
 
 ## Recommended IDE Setup
 

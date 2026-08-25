@@ -15,7 +15,7 @@
         "label": "main",
         "title": "shakespAIre",
         "width": 420,
-        "height": 300,
+        "height": 560,
         "resizable": true,
         "fullscreen": false
       }
