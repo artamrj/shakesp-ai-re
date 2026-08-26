@@ -75,10 +75,20 @@ pub async fn capture_selected_text<R: Runtime>(app: &AppHandle<R>) -> Result<Str
 
     let sentinel = format!("shakespaire-selection-{}", std::process::id());
     let capture_result = async {
+        let modifier_deadline =
+            tokio::time::Instant::now() + tokio::time::Duration::from_millis(1200);
+        while input::shortcut_modifiers_pressed() {
+            if tokio::time::Instant::now() >= modifier_deadline {
+                return Err("release the shortcut keys before text capture begins".to_string());
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(25)).await;
+
         write_to_clipboard(app, &sentinel)?;
         input::simulate_copy()?;
 
-        let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_millis(240);
+        let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_millis(900);
         loop {
             if let Ok(selected) = read_current_clipboard(app) {
                 if selected != sentinel && !selected.trim().is_empty() {

@@ -210,6 +210,22 @@ fn simulate_command_key(key: &str) -> Result<(), String> {
     }
 }
 
+#[cfg(target_os = "windows")]
+pub fn shortcut_modifiers_pressed() -> bool {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        GetAsyncKeyState, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
+    };
+
+    [VK_CONTROL, VK_SHIFT, VK_MENU, VK_LWIN, VK_RWIN]
+        .into_iter()
+        .any(|key| unsafe { GetAsyncKeyState(key.0 as i32) as u16 & 0x8000 != 0 })
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn shortcut_modifiers_pressed() -> bool {
+    false
+}
+
 #[cfg(target_os = "linux")]
 fn simulate_command_key(key: &str) -> Result<(), String> {
     fn run_tool(program: &str, arguments: &[&str]) -> Result<(), String> {

@@ -143,11 +143,17 @@
     copyState = "idle";
 
     try {
-      const [capturedText, testMode] = await Promise.all([
+      const [capturedText, testMode, contextError] = await Promise.all([
         invoke<string>("get_popup_selection"),
         invoke<boolean>("get_popup_test_mode"),
+        invoke<string>("get_popup_error"),
       ]);
-      if (generation !== requestGeneration || !capturedText.trim()) return;
+      if (generation !== requestGeneration) return;
+      if (contextError) {
+        popupError = contextError;
+        return;
+      }
+      if (!capturedText.trim()) return;
       selectedText = capturedText;
       isTestPopup = testMode;
       if (testMode) {
@@ -277,7 +283,9 @@
   :global(button) { font: inherit; }
   .popup-shell { position: relative; display: flex; flex-direction: column; height: 100vh; overflow: hidden; border: 1px solid rgba(255,255,255,.22); border-radius: 16px; background: rgba(255,255,255,.025); box-shadow: inset 0 1px 0 rgba(255,255,255,.28); font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; font-synthesis: none; font-weight: 300; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
   .popup-shell.platform-windows { border-color: rgba(255,255,255,.32); background: linear-gradient(135deg, rgba(255,255,255,.12), rgba(230,236,246,.07)); box-shadow: inset 0 1px 0 rgba(255,255,255,.34); font-family: "Segoe UI Variable Text", "Segoe UI", -apple-system, sans-serif; }
-  .popup-shell.platform-linux { border-color: rgba(255,255,255,.48); background: linear-gradient(135deg, rgba(250,252,255,.76), rgba(232,237,245,.62)); box-shadow: inset 0 1px 0 rgba(255,255,255,.58); font-family: Inter, "Noto Sans", Ubuntu, Cantarell, sans-serif; backdrop-filter: blur(22px) saturate(1.22); -webkit-backdrop-filter: blur(22px) saturate(1.22); }
+  .popup-shell.platform-linux { isolation: isolate; border-color: rgba(255,255,255,.68); background: linear-gradient(135deg, rgba(250,252,255,.82), rgba(225,232,244,.74)); box-shadow: inset 0 1px 0 rgba(255,255,255,.78), 0 16px 42px rgba(28,38,58,.22); font-family: Inter, "Noto Sans", Ubuntu, Cantarell, sans-serif; backdrop-filter: blur(28px) saturate(1.3); -webkit-backdrop-filter: blur(28px) saturate(1.3); }
+  .popup-shell.platform-linux::before { content: ""; position: absolute; z-index: 0; inset: -45%; background: radial-gradient(circle at 24% 28%, rgba(153,126,220,.30), transparent 28%), radial-gradient(circle at 76% 68%, rgba(102,174,211,.24), transparent 31%), radial-gradient(circle at 54% 46%, rgba(255,255,255,.76), transparent 34%); filter: blur(26px); opacity: .72; pointer-events: none; }
+  .popup-shell.platform-linux::after { content: ""; position: absolute; z-index: 0; inset: 0; background: repeating-linear-gradient(118deg, rgba(255,255,255,.055) 0 1px, transparent 1px 4px); opacity: .55; pointer-events: none; }
   .popup-header { position: relative; z-index: 1; display: flex; align-items: center; flex: 0 0 auto; height: 36px; padding: 0 9px 0 14px; border-bottom: 1px solid rgba(87,94,108,.09); user-select: none; }
   .popup-title { display: flex; align-items: center; color: rgba(28,29,33,.80); font-size: 12px; font-weight: 400; }
   .popup-title strong { font-weight: 400; }

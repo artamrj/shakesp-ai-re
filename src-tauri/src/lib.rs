@@ -419,6 +419,11 @@ fn get_popup_test_mode() -> Result<bool, String> {
 }
 
 #[tauri::command]
+fn get_popup_error() -> Result<String, String> {
+    PopupWindow::error()
+}
+
+#[tauri::command]
 async fn replace_text(app: AppHandle, text: String) -> Result<(), String> {
     if text.trim().is_empty() {
         return Err("replacement text is empty".to_string());
@@ -646,6 +651,9 @@ fn run_shortcut_flow(app: AppHandle) {
             }
             Err(error) => {
                 log::error!("shortcut flow failed: {error}");
+                if let Err(popup_error) = PopupWindow::show_error(&app, &error) {
+                    log::error!("could not show shortcut error popup: {popup_error}");
+                }
                 let _ = app.emit("shortcut-error", &error);
             }
         }
@@ -771,6 +779,7 @@ pub fn run() {
             capture_selected_text,
             get_popup_selection,
             get_popup_test_mode,
+            get_popup_error,
             replace_text,
             stream_ai_text,
             show_popup,

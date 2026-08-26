@@ -21,12 +21,14 @@ struct PopupContext {
     selected_text: String,
     source_application: Option<String>,
     is_test: bool,
+    error: String,
 }
 
 static POPUP_CONTEXT: Mutex<PopupContext> = Mutex::new(PopupContext {
     selected_text: String::new(),
     source_application: None,
     is_test: false,
+    error: String::new(),
 });
 static STREAM_GENERATION: AtomicU64 = AtomicU64::new(0);
 static STREAM_STATE: OnceLock<watch::Sender<u64>> = OnceLock::new();
@@ -54,7 +56,7 @@ impl PopupWindow {
         selected_text: &str,
         source_application: Option<String>,
     ) -> Result<(), String> {
-        Self::show_with_mode(app, selected_text, source_application, false)
+        Self::show_with_mode(app, selected_text, source_application, false, "")
     }
 
     pub fn show_test<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
@@ -63,7 +65,12 @@ impl PopupWindow {
             "This is a popup preview. No selected text was captured.",
             None,
             true,
+            "",
         )
+    }
+
+    pub fn show_error<R: Runtime>(app: &AppHandle<R>, error: &str) -> Result<(), String> {
+        Self::show_with_mode(app, "", None, false, error)
     }
 
     fn show_with_mode<R: Runtime>(
@@ -71,11 +78,13 @@ impl PopupWindow {
         selected_text: &str,
         source_application: Option<String>,
         is_test: bool,
+        error: &str,
     ) -> Result<(), String> {
         *POPUP_CONTEXT.lock().map_err(|error| error.to_string())? = PopupContext {
             selected_text: selected_text.to_string(),
             source_application,
             is_test,
+            error: error.to_string(),
         };
         Self::cancel_stream();
 
@@ -156,6 +165,13 @@ impl PopupWindow {
         POPUP_CONTEXT
             .lock()
             .map(|context| context.is_test)
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn error() -> Result<String, String> {
+        POPUP_CONTEXT
+            .lock()
+            .map(|context| context.error.clone())
             .map_err(|error| error.to_string())
     }
 }
