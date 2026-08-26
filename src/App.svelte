@@ -18,6 +18,7 @@
   let isRecordingShortcut = $state(false);
   let isSavingShortcut = $state(false);
   let shortcutError = $state("");
+  let recordingParts = $state<string[]>([]);
   const isMac = navigator.userAgent.includes("Mac");
 
   onMount(() => {
@@ -139,36 +140,49 @@
 
   function startShortcutRecording() {
     shortcutError = "";
+    recordingParts = [];
     isRecordingShortcut = true;
+  }
+
+  function eventModifiers(event: KeyboardEvent) {
+    return [
+      event.ctrlKey && "Control",
+      event.altKey && "Alt",
+      event.shiftKey && "Shift",
+      event.metaKey && "Super",
+    ].filter((part): part is string => Boolean(part));
   }
 
   async function recordShortcut(event: KeyboardEvent) {
     if (!isRecordingShortcut) return;
     event.preventDefault();
     event.stopPropagation();
+    if (event.repeat) return;
 
     if (event.key === "Escape") {
       isRecordingShortcut = false;
+      recordingParts = [];
+      shortcutError = "";
       return;
     }
-    if (["Meta", "Control", "Alt", "Shift"].includes(event.key)) return;
+    const modifiers = eventModifiers(event);
+    recordingParts = modifiers;
+    if (["Meta", "Control", "Alt", "Shift"].includes(event.key)) {
+      shortcutError = "Keep holding the modifier, then press one other key.";
+      return;
+    }
     if (!isSupportedShortcutCode(event.code)) {
       shortcutError = "That key is not supported. Try a letter, number, arrow, or function key.";
       return;
     }
 
-    const modifiers = [
-      event.ctrlKey && "Control",
-      event.altKey && "Alt",
-      event.shiftKey && "Shift",
-      event.metaKey && "Super",
-    ].filter(Boolean);
     if (modifiers.length === 0) {
-      shortcutError = "Include at least one modifier key.";
+      shortcutError = "Hold Command, Control, Option/Alt, or Shift while pressing the key.";
       return;
     }
 
     const candidate = [...modifiers, event.code].join("+");
+    recordingParts = [...modifiers, event.code];
     isRecordingShortcut = false;
     isSavingShortcut = true;
     shortcutError = "";
@@ -178,11 +192,15 @@
     } catch (error) {
       shortcutError = String(error);
       status = "Could not update shortcut";
+      recordingParts = [];
+      isRecordingShortcut = true;
     } finally {
       isSavingShortcut = false;
     }
   }
 </script>
+
+<svelte:window onkeydown={recordShortcut} />
 
 {#if isDebugE2e}
   <main class="debug-e2e-shell">
@@ -223,7 +241,7 @@
     <section class="shortcut-card">
       <div class="shortcut-copy">
         <strong>Global shortcut</strong>
-        <p>{isRecordingShortcut ? "Press your new shortcut. Esc to cancel." : "Select text in another app, then press:"}</p>
+        <p>{isRecordingShortcut ? "Hold modifier(s) + one key. Esc cancels." : "Select text in another app, then press:"}</p>
       </div>
       <button
         class:recording={isRecordingShortcut}
@@ -233,10 +251,16 @@
         aria-pressed={isRecordingShortcut}
         disabled={isSavingShortcut}
         onclick={startShortcutRecording}
-        onkeydown={recordShortcut}
       >
         {#if isRecordingShortcut}
-          <span class="recording-dot"></span><span>Recording…</span>
+          <span class="recording-dot"></span>
+          {#if recordingParts.length > 0}
+            {#each shortcutParts(recordingParts.join("+")) as part, index}
+              {#if index > 0}<span class="plus">+</span>{/if}<kbd>{part}</kbd>
+            {/each}
+          {:else}
+            <span>Press keys…</span>
+          {/if}
         {:else}
           {#each shortcutParts(shortcut) as part, index}
             {#if index > 0}<span class="plus">+</span>{/if}<kbd>{part}</kbd>
