@@ -209,7 +209,7 @@
 {:else}
   <main class="settings-shell">
     <div class="brand">
-      <span class="brand-mark">✦</span>
+      <img class="brand-mark" src="/app-icon.png" alt="" />
       <div>
         <h1>shakespAIre</h1>
         <p>AI for any selected text, anywhere.</p>
@@ -285,7 +285,7 @@
   :global(button), :global(input) { font: inherit; }
   .settings-shell { max-width: 520px; margin: 0 auto; padding: 30px; }
   .brand { display: flex; align-items: center; gap: 13px; margin-bottom: 25px; }
-  .brand-mark { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 13px; background: #e7dcf8; color: #6857d9; font-size: 22px; }
+  .brand-mark { display: block; width: 42px; height: 42px; border-radius: 12px; }
   h1 { margin: 0; font-family: Georgia, serif; font-size: 26px; letter-spacing: -.4px; }
   .brand p { margin: 3px 0 0; color: #697184; font-size: 13px; }
   .config-card, .shortcut-card { border: 1px solid rgba(255,255,255,.9); border-radius: 18px; background: rgba(255,255,255,.72); box-shadow: 0 14px 40px rgba(35,43,70,.07); backdrop-filter: blur(18px); }
