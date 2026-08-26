@@ -6,7 +6,7 @@
   let config = $state({
     base_url: "https://api.openai.com/v1",
     api_key: "",
-    model: "gpt-4o-mini",
+    model: "gpt-5.6-luna",
   });
   let status = $state("Ready");
   let isTesting = $state(false);
@@ -228,7 +228,7 @@
       </div>
       <div class="field">
         <label for="model">Model</label>
-        <input id="model" type="text" bind:value={config.model} placeholder="gpt-4o-mini" />
+        <input id="model" type="text" bind:value={config.model} placeholder="gpt-5.6-luna" />
       </div>
       <div class="settings-actions">
         <button onclick={saveConfig}>Save</button>

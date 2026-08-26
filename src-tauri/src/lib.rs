@@ -24,7 +24,7 @@ use tokio_stream::StreamExt;
 static AI_CONFIG: OnceLock<Mutex<AiConfig>> = OnceLock::new();
 static ACTIVE_SHORTCUT: OnceLock<Mutex<String>> = OnceLock::new();
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
-const DEFAULT_MODEL: &str = "gpt-4o-mini";
+const DEFAULT_MODEL: &str = "gpt-5.6-luna";
 const KEYCHAIN_SERVICE: &str = "com.artamrj.shakespaire";
 const KEYCHAIN_ACCOUNT: &str = "ai-api-key";
 const SETTINGS_FILE: &str = "ai-settings.json";
