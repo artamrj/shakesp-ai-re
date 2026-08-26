@@ -13,6 +13,7 @@
   let streamStatus = $state("Connecting");
   let retryMessage = $state("");
   let isApplying = $state(false);
+  let isTestPopup = $state(false);
   let copyState = $state<"idle" | "copied" | "error">("idle");
   let startTimer: number | undefined;
   let renderFrame: number | undefined;
@@ -138,12 +139,22 @@
     streamStatus = "Connecting";
     retryMessage = "";
     isApplying = false;
+    isTestPopup = false;
     copyState = "idle";
 
     try {
-      const capturedText = await invoke<string>("get_popup_selection");
+      const [capturedText, testMode] = await Promise.all([
+        invoke<string>("get_popup_selection"),
+        invoke<boolean>("get_popup_test_mode"),
+      ]);
       if (generation !== requestGeneration || !capturedText.trim()) return;
       selectedText = capturedText;
+      isTestPopup = testMode;
+      if (testMode) {
+        outputText = "Popup display is working on this device. The shortcut and text-capture steps were intentionally skipped.";
+        streamStatus = "Preview";
+        return;
+      }
       isStreaming = true;
       await invoke("stream_ai_text", { selectedText });
     } catch (error) {
@@ -209,7 +220,7 @@
 <main class="popup-shell" class:platform-windows={platform === "windows"} class:platform-linux={platform === "linux"}>
   <header class="popup-header">
     <div class="popup-title">
-      <strong>Proofread</strong>
+      <strong>{isTestPopup ? "Popup test" : "Proofread"}</strong>
     </div>
     {#if isStreaming}
       <span class="stream-status"><i></i>{streamStatus}</span>
@@ -245,9 +256,9 @@
   </section>
 
   <footer class="popup-actions">
-    <button class="primary" onclick={applyReplacement} disabled={isStreaming || isApplying || !outputText.trim()} title="Replace selected text">
+    <button class="primary" onclick={applyReplacement} disabled={isTestPopup || isStreaming || isApplying || !outputText.trim()} title={isTestPopup ? "Replacement is disabled in test mode" : "Replace selected text"}>
       {#if isApplying}<span class="button-spinner"></span>{/if}
-      {isApplying ? "Replacing" : "Replace"}
+      {isTestPopup ? "Preview" : isApplying ? "Replacing" : "Replace"}
     </button>
     <button class="secondary" onclick={copyResult} disabled={!outputText.trim()} title="Copy result">
       {#if copyState === "copied"}

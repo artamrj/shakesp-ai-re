@@ -10,6 +10,7 @@
   });
   let status = $state("Ready");
   let isTesting = $state(false);
+  let isTestingPopup = $state(false);
   let testResult = $state("");
   let isDebugE2e = $state(false);
   let debugSource = $state<HTMLTextAreaElement>();
@@ -81,6 +82,18 @@
       testResult = `Connection failed: ${error}`;
     } finally {
       isTesting = false;
+    }
+  }
+
+  async function testPopup() {
+    isTestingPopup = true;
+    try {
+      await invoke("test_popup");
+      status = "Test popup opened — popup display is working";
+    } catch (error) {
+      status = `Popup test failed: ${error}`;
+    } finally {
+      isTestingPopup = false;
     }
   }
 
@@ -202,6 +215,7 @@
       <div class="settings-actions">
         <button onclick={saveConfig}>Save</button>
         <button class="secondary" onclick={testApi} disabled={isTesting}>{isTesting ? "Testing…" : "Test API"}</button>
+        <button class="secondary" onclick={testPopup} disabled={isTestingPopup}>{isTestingPopup ? "Opening…" : "Test popup"}</button>
       </div>
       {#if testResult}<p class="test-result">{testResult}</p>{/if}
     </section>

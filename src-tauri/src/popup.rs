@@ -20,11 +20,13 @@ const AUTO_HIDE_DOCK_CLEARANCE: f64 = 88.0;
 struct PopupContext {
     selected_text: String,
     source_application: Option<String>,
+    is_test: bool,
 }
 
 static POPUP_CONTEXT: Mutex<PopupContext> = Mutex::new(PopupContext {
     selected_text: String::new(),
     source_application: None,
+    is_test: false,
 });
 static STREAM_GENERATION: AtomicU64 = AtomicU64::new(0);
 static STREAM_STATE: OnceLock<watch::Sender<u64>> = OnceLock::new();
@@ -52,9 +54,28 @@ impl PopupWindow {
         selected_text: &str,
         source_application: Option<String>,
     ) -> Result<(), String> {
+        Self::show_with_mode(app, selected_text, source_application, false)
+    }
+
+    pub fn show_test<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+        Self::show_with_mode(
+            app,
+            "This is a popup preview. No selected text was captured.",
+            None,
+            true,
+        )
+    }
+
+    fn show_with_mode<R: Runtime>(
+        app: &AppHandle<R>,
+        selected_text: &str,
+        source_application: Option<String>,
+        is_test: bool,
+    ) -> Result<(), String> {
         *POPUP_CONTEXT.lock().map_err(|error| error.to_string())? = PopupContext {
             selected_text: selected_text.to_string(),
             source_application,
+            is_test,
         };
         Self::cancel_stream();
 
@@ -128,6 +149,13 @@ impl PopupWindow {
         POPUP_CONTEXT
             .lock()
             .map(|context| context.source_application.clone())
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn is_test() -> Result<bool, String> {
+        POPUP_CONTEXT
+            .lock()
+            .map(|context| context.is_test)
             .map_err(|error| error.to_string())
     }
 }
@@ -224,11 +252,26 @@ fn apply_glass<R: Runtime>(_window: &WebviewWindow<R>) -> Result<(), String> {
 }
 
 fn popup_position<R: Runtime>(app: &AppHandle<R>) -> Result<PhysicalPosition<i32>, String> {
-    let cursor = app.cursor_position().map_err(|error| error.to_string())?;
+    let cursor = app
+        .cursor_position()
+        .map_err(|error| {
+            log::warn!("global cursor position unavailable; using monitor fallback: {error}");
+            error
+        })
+        .ok();
     let selection = crate::input::selected_text_bounds().ok();
-    let monitor = app
-        .monitor_from_point(cursor.x, cursor.y)
-        .map_err(|error| error.to_string())?;
+    let cursor_monitor = cursor.and_then(|position| {
+        app.monitor_from_point(position.x, position.y)
+            .map_err(|error| log::warn!("could not resolve monitor at cursor: {error}"))
+            .ok()
+            .flatten()
+    });
+    let window_monitor = app
+        .get_webview_window("main")
+        .and_then(|window| window.current_monitor().ok().flatten());
+    let monitor = cursor_monitor
+        .or(window_monitor)
+        .or_else(|| app.primary_monitor().ok().flatten());
 
     if let Some(monitor) = monitor {
         let work_area = monitor.work_area();
@@ -244,7 +287,7 @@ fn popup_position<R: Runtime>(app: &AppHandle<R>) -> Result<PhysicalPosition<i32
             monitor_bottom,
             scale,
         );
-        let (anchor_x, anchor_top, anchor_bottom) = selection
+        let anchor = selection
             .map(|bounds| {
                 (
                     bounds.x * scale,
@@ -252,7 +295,14 @@ fn popup_position<R: Runtime>(app: &AppHandle<R>) -> Result<PhysicalPosition<i32
                     (bounds.y + bounds.height) * scale,
                 )
             })
-            .unwrap_or((cursor.x, cursor.y, cursor.y));
+            .or_else(|| cursor.map(|position| (position.x, position.y, position.y)));
+        if anchor.is_none() {
+            return Ok(PhysicalPosition::new(
+                (area_x + (area_width - POPUP_WIDTH * scale).max(0.0) / 2.0).round() as i32,
+                (area_y + (area_height - POPUP_HEIGHT * scale).max(0.0) / 2.0).round() as i32,
+            ));
+        }
+        let (anchor_x, anchor_top, anchor_bottom) = anchor.expect("anchor checked above");
         let (x, y) = anchored_position(
             anchor_x,
             anchor_top,
@@ -266,6 +316,7 @@ fn popup_position<R: Runtime>(app: &AppHandle<R>) -> Result<PhysicalPosition<i32
         );
         Ok(PhysicalPosition::new(x.round() as i32, y.round() as i32))
     } else {
+        let cursor = cursor.unwrap_or(PhysicalPosition::new(40.0, 40.0));
         Ok(PhysicalPosition::new(
             (cursor.x + POPUP_GAP).round() as i32,
             (cursor.y + POPUP_GAP).round() as i32,

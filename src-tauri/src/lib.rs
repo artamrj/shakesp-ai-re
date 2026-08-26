@@ -414,6 +414,11 @@ fn get_popup_selection() -> Result<String, String> {
 }
 
 #[tauri::command]
+fn get_popup_test_mode() -> Result<bool, String> {
+    PopupWindow::is_test()
+}
+
+#[tauri::command]
 async fn replace_text(app: AppHandle, text: String) -> Result<(), String> {
     if text.trim().is_empty() {
         return Err("replacement text is empty".to_string());
@@ -575,6 +580,11 @@ fn surface_stream_error(
 fn show_popup(app: AppHandle, selected_text: String) -> Result<(), String> {
     let source_application = input::frontmost_application().ok();
     PopupWindow::show(&app, &selected_text, source_application)
+}
+
+#[tauri::command]
+fn test_popup(app: AppHandle) -> Result<(), String> {
+    PopupWindow::show_test(&app)
 }
 
 #[tauri::command]
@@ -760,9 +770,11 @@ pub fn run() {
             set_shortcut,
             capture_selected_text,
             get_popup_selection,
+            get_popup_test_mode,
             replace_text,
             stream_ai_text,
             show_popup,
+            test_popup,
             close_popup,
             debug_e2e_enabled,
             debug_trigger_shortcut,
