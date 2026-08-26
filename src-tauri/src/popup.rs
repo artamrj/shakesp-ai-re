@@ -16,6 +16,10 @@ const POPUP_GAP: f64 = 8.0;
 const POPUP_EDGE_MARGIN: f64 = 10.0;
 const AUTO_HIDE_DOCK_CLEARANCE: f64 = 88.0;
 
+fn popup_takes_focus() -> bool {
+    cfg!(any(target_os = "windows", target_os = "linux"))
+}
+
 #[derive(Default)]
 struct PopupContext {
     selected_text: String,
@@ -91,7 +95,7 @@ impl PopupWindow {
         let position = popup_position(app)?;
         let window = if let Some(window) = app.get_webview_window(POPUP_LABEL) {
             window
-                .set_focusable(false)
+                .set_focusable(popup_takes_focus())
                 .map_err(|error| error.to_string())?;
             window
                 .set_resizable(false)
@@ -108,6 +112,12 @@ impl PopupWindow {
             create_window(app, position, true)?
         };
 
+        // Native backdrop effects can be dropped while a prewarmed window is hidden.
+        // Reapply them after every show so Windows composition is reliable.
+        apply_glass(&window)?;
+        if popup_takes_focus() {
+            window.set_focus().map_err(|error| error.to_string())?;
+        }
         let _ = window.emit("popup-reset", ());
         Ok(())
     }
@@ -197,7 +207,7 @@ fn create_window<R: Runtime>(
     .always_on_top(true)
     .skip_taskbar(true)
     .shadow(true)
-    .focusable(false)
+    .focusable(popup_takes_focus())
     .focused(false)
     .visible(visible)
     .build()
@@ -206,9 +216,35 @@ fn create_window<R: Runtime>(
     window
         .set_position(position)
         .map_err(|error| error.to_string())?;
+    install_focus_loss_handler(app, &window);
     apply_glass(&window)?;
     Ok(window)
 }
+
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+fn install_focus_loss_handler<R: Runtime>(app: &AppHandle<R>, window: &WebviewWindow<R>) {
+    let popup_app = app.clone();
+    let popup = window.clone();
+    window.on_window_event(move |event| {
+        if !matches!(event, tauri::WindowEvent::Focused(false)) {
+            return;
+        }
+
+        // Focus events around show/set_focus can arrive out of order. Recheck after
+        // a short grace period and dismiss only a visible popup that stayed unfocused.
+        let popup_app = popup_app.clone();
+        let popup = popup.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(60)).await;
+            if popup.is_visible().unwrap_or(false) && !popup.is_focused().unwrap_or(false) {
+                let _ = PopupWindow::close(&popup_app);
+            }
+        });
+    });
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+fn install_focus_loss_handler<R: Runtime>(_app: &AppHandle<R>, _window: &WebviewWindow<R>) {}
 
 #[cfg(target_os = "macos")]
 fn apply_glass<R: Runtime>(window: &WebviewWindow<R>) -> Result<(), String> {
@@ -249,14 +285,22 @@ fn apply_glass<R: Runtime>(window: &WebviewWindow<R>) -> Result<(), String> {
 
 #[cfg(target_os = "windows")]
 fn apply_glass<R: Runtime>(window: &WebviewWindow<R>) -> Result<(), String> {
-    use window_vibrancy::{apply_acrylic, apply_blur};
+    use window_vibrancy::{
+        apply_acrylic, apply_blur, apply_mica, clear_acrylic, clear_blur, clear_mica,
+    };
 
+    let _ = clear_mica(window);
+    let _ = clear_acrylic(window);
+    let _ = clear_blur(window);
     if let Err(acrylic_error) = apply_acrylic(window, Some((244, 246, 250, 176))) {
-        log::info!("Windows Acrylic unavailable ({acrylic_error}); using blur fallback");
-        if let Err(blur_error) = apply_blur(window, Some((244, 246, 250, 150))) {
-            log::warn!(
-                "Windows native blur unavailable ({blur_error}); using translucent CSS fallback"
-            );
+        log::info!("Windows Acrylic unavailable ({acrylic_error}); using Mica fallback");
+        if let Err(mica_error) = apply_mica(window, Some(false)) {
+            log::info!("Windows Mica unavailable ({mica_error}); using blur fallback");
+            if let Err(blur_error) = apply_blur(window, Some((244, 246, 250, 150))) {
+                log::warn!(
+                    "Windows native blur unavailable ({blur_error}); using translucent CSS fallback"
+                );
+            }
         }
     }
     Ok(())

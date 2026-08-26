@@ -6,8 +6,8 @@ The bundle configuration is split by operating system and merged automatically b
 - Windows: per-user NSIS `.exe` and WiX `.msi`
 - Linux: AppImage, Debian `.deb`, and RPM
 
-The checked-in icon source is `src-tauri/icons/icon.png`. Regenerate every platform size after
-changing it with `npm run icons`. Do not manually resize only one output format.
+The checked-in icon source is `assets/branding/shakespaire-icon-master.png`. Regenerate every
+platform size after changing it with `npm run icons`. Do not manually resize only one output format.
 
 ## Local bundles
 
@@ -22,13 +22,6 @@ npm run bundle:linux
 Windows MSI uses WiX and must be built on Windows. Linux should be built on the oldest supported
 Linux baseline; the release workflow uses Ubuntu 22.04 to avoid unnecessarily raising the glibc
 requirement. The GitHub workflow builds Apple Silicon macOS and x64 Windows/Linux bundles.
-
-The Windows job uploads `shakespAIre-windows-x64-portable.zip` both as a workflow artifact and as
-an asset on the draft GitHub release. After downloading and extracting it, run `shakespAIre.exe`
-directly; it does not install files or require administrator rights. The portable executable
-expects Microsoft Edge WebView2 to already be present, as it normally is on supported Windows
-systems. It is not a way to bypass endpoint security: unsigned portable executables can still be
-inspected or blocked by products such as Cortex XDR.
 
 Before tagging a release, keep these versions identical:
 
