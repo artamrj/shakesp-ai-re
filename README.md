@@ -24,7 +24,7 @@ Select text in **any** application, press a global shortcut, and a small floatin
 ## Demo
 
 <p align="center">
-  <img src="assets/screenshots/demo.gif" width="640" alt="shakespAIre demo: select text, press the shortcut, stream the proofread, press Enter to replace" />
+  <img src="assets/screenshots/Screen Recording 2026-08-26 at 16.47.49 (1).gif" width="640" alt="shakespAIre demo: select text, press the shortcut, stream the proofread, press Enter to replace" />
 </p>
 
 > **Add the demo:** record ~10 s — select a sentence with a typo in any app → press the shortcut → the popup streams a correction → press **Enter** → the text is replaced. Save as `assets/screenshots/demo.gif`.
