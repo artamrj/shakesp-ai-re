@@ -27,8 +27,6 @@ Select text in **any** application, press a global shortcut, and a small floatin
   <img src="assets/screenshots/Screen Recording 2026-08-26 at 16.47.49 (1).gif" width="640" alt="shakespAIre demo: select text, press the shortcut, stream the proofread, press Enter to replace" />
 </p>
 
-> **Add the demo:** record ~10 s — select a sentence with a typo in any app → press the shortcut → the popup streams a correction → press **Enter** → the text is replaced. Save as `assets/screenshots/demo.gif`.
-
 ## Features
 
 - **Works anywhere** — email, docs, browsers, terminals, chat apps. Not bound to any single editor.
@@ -72,11 +70,9 @@ The trigger shortcut is fully [customizable](#customizing-the-shortcut).
 
 ### The proofread popup
 
-<p align="center">
+<!-- <p align="center">
   <img src="assets/screenshots/popup-streaming.png" width="360" alt="shakespAIre popup streaming a proofread" />
-</p>
-
-> **Add this screenshot:** trigger a proofread and capture it mid-stream — status pill reads "Writing", result text visible with a blinking cursor. Save as `assets/screenshots/popup-streaming.png`.
+</p> -->
 
 The popup shows a status pill while working (`Connecting` → `Writing` → `Ready`), renders the result as sanitized markdown, and exposes three actions: **Replace**, **Copy**, and **Close**. On a connection error it shows the message and a **Try again** button.
 
