@@ -5,6 +5,7 @@ on:
   push:
     tags:
       - "app-v*"
+      - "v*"
 
 jobs:
   build:
@@ -101,3 +102,12 @@ jobs:
           name: shakespAIre-windows-x64-portable
           path: portable/shakespAIre-windows-x64-portable.zip
           if-no-files-found: error
+
+      - name: Attach portable Windows test build to draft release
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = (Get-Content "src-tauri/tauri.conf.json" | ConvertFrom-Json).version
+          gh release upload "app-v$version" "portable/shakespAIre-windows-x64-portable.zip" --clobber
