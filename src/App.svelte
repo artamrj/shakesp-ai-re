@@ -13,6 +13,11 @@
   let testResult = $state("");
   let isDebugE2e = $state(false);
   let debugSource = $state<HTMLTextAreaElement>();
+  let shortcut = $state("CommandOrControl+Shift+Space");
+  let isRecordingShortcut = $state(false);
+  let isSavingShortcut = $state(false);
+  let shortcutError = $state("");
+  const isMac = navigator.userAgent.includes("Mac");
 
   onMount(() => {
     const unlisteners: UnlistenFn[] = [];
@@ -31,6 +36,7 @@
 
       try {
         config = await invoke<typeof config>("get_ai_config");
+        shortcut = await invoke<string>("get_shortcut");
       } catch (error) {
         status = `Could not load settings: ${error}`;
       }
@@ -77,6 +83,92 @@
       isTesting = false;
     }
   }
+
+  const supportedShortcutCodes = new Set([
+    "Backquote", "Backslash", "BracketLeft", "BracketRight", "Comma", "Equal",
+    "Minus", "Period", "Quote", "Semicolon", "Slash", "Space", "Tab", "Enter",
+    "Backspace", "Delete", "End", "Home", "Insert", "PageDown", "PageUp",
+    "ArrowDown", "ArrowLeft", "ArrowRight", "ArrowUp",
+  ]);
+
+  function isSupportedShortcutCode(code: string) {
+    return supportedShortcutCodes.has(code) || /^(Key[A-Z]|Digit[0-9]|F(?:[1-9]|1[0-9]|2[0-4]))$/.test(code);
+  }
+
+  function shortcutParts(value: string) {
+    const parts = value.split("+");
+    const key = parts.pop();
+    const modifierOrder = isMac
+      ? ["super", "commandorcontrol", "control", "alt", "shift"]
+      : ["commandorcontrol", "control", "alt", "shift", "super"];
+    const displayParts = [
+      ...parts.sort((a, b) => modifierOrder.indexOf(a.toLowerCase()) - modifierOrder.indexOf(b.toLowerCase())),
+      ...(key ? [key] : []),
+    ];
+
+    return displayParts.map((part) => {
+      const labels: Record<string, string> = isMac
+        ? { super: "⌘", commandorcontrol: "⌘", control: "⌃", shift: "⇧", alt: "⌥" }
+        : { super: "Win", commandorcontrol: "Ctrl", control: "Ctrl", shift: "Shift", alt: "Alt" };
+      const normalized = part.toLowerCase();
+      if (labels[normalized]) return labels[normalized];
+      if (/^Key[A-Z]$/.test(part)) return part.slice(3);
+      if (/^Digit[0-9]$/.test(part)) return part.slice(5);
+      const keyLabels: Record<string, string> = {
+        Space: "Space", ArrowUp: "↑", ArrowDown: "↓", ArrowLeft: "←", ArrowRight: "→",
+        Backquote: "`", Backslash: "\\", BracketLeft: "[", BracketRight: "]",
+        Comma: ",", Equal: "=", Minus: "−", Period: ".", Quote: "'", Semicolon: ";", Slash: "/",
+        PageDown: "PgDn", PageUp: "PgUp",
+      };
+      return keyLabels[part] ?? part;
+    });
+  }
+
+  function startShortcutRecording() {
+    shortcutError = "";
+    isRecordingShortcut = true;
+  }
+
+  async function recordShortcut(event: KeyboardEvent) {
+    if (!isRecordingShortcut) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (event.key === "Escape") {
+      isRecordingShortcut = false;
+      return;
+    }
+    if (["Meta", "Control", "Alt", "Shift"].includes(event.key)) return;
+    if (!isSupportedShortcutCode(event.code)) {
+      shortcutError = "That key is not supported. Try a letter, number, arrow, or function key.";
+      return;
+    }
+
+    const modifiers = [
+      event.ctrlKey && "Control",
+      event.altKey && "Alt",
+      event.shiftKey && "Shift",
+      event.metaKey && "Super",
+    ].filter(Boolean);
+    if (modifiers.length === 0) {
+      shortcutError = "Include at least one modifier key.";
+      return;
+    }
+
+    const candidate = [...modifiers, event.code].join("+");
+    isRecordingShortcut = false;
+    isSavingShortcut = true;
+    shortcutError = "";
+    try {
+      shortcut = await invoke<string>("set_shortcut", { shortcut: candidate });
+      status = "Shortcut updated";
+    } catch (error) {
+      shortcutError = String(error);
+      status = "Could not update shortcut";
+    } finally {
+      isSavingShortcut = false;
+    }
+  }
 </script>
 
 {#if isDebugE2e}
@@ -115,12 +207,30 @@
     </section>
 
     <section class="shortcut-card">
-      <div>
+      <div class="shortcut-copy">
         <strong>Global shortcut</strong>
-        <p>Select text in another app, then press:</p>
+        <p>{isRecordingShortcut ? "Press your new shortcut. Esc to cancel." : "Select text in another app, then press:"}</p>
       </div>
-      <div class="shortcut"><kbd>⌘</kbd><span>+</span><kbd>⇧</kbd><span>+</span><kbd>Space</kbd></div>
+      <button
+        class:recording={isRecordingShortcut}
+        class="shortcut-recorder"
+        type="button"
+        aria-label="Customize global shortcut"
+        aria-pressed={isRecordingShortcut}
+        disabled={isSavingShortcut}
+        onclick={startShortcutRecording}
+        onkeydown={recordShortcut}
+      >
+        {#if isRecordingShortcut}
+          <span class="recording-dot"></span><span>Recording…</span>
+        {:else}
+          {#each shortcutParts(shortcut) as part, index}
+            {#if index > 0}<span class="plus">+</span>{/if}<kbd>{part}</kbd>
+          {/each}
+        {/if}
+      </button>
     </section>
+    {#if shortcutError}<p class="shortcut-error">{shortcutError}</p>{/if}
     <p class="status">{status}</p>
   </main>
 {/if}
@@ -155,10 +265,17 @@
   .settings-actions { display: flex; gap: 8px; margin-top: 18px; }
   .test-result { margin: 12px 0 0; color: #596174; font-size: 12px; }
   .shortcut-card { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 14px; padding: 15px 18px; }
+  .shortcut-copy { min-width: 0; }
   .shortcut-card strong { font-size: 13px; }
   .shortcut-card p { margin: 3px 0 0; color: #717889; font-size: 11px; }
-  .shortcut { display: flex; align-items: center; gap: 4px; color: #8b8490; font-size: 10px; white-space: nowrap; }
+  .shortcut-recorder { display: flex; min-width: 112px; min-height: 34px; align-items: center; justify-content: center; gap: 4px; padding: 5px 8px; border: 1px solid transparent; background: transparent; color: #8b8490; font-size: 10px; white-space: nowrap; }
+  .shortcut-recorder:hover:not(:disabled) { border-color: #d8d3cb; background: #f8f5fb; }
+  .shortcut-recorder:focus-visible { outline: none; border-color: #9068ce; box-shadow: 0 0 0 3px rgba(129,85,199,.13); }
+  .shortcut-recorder.recording { border-color: #a98bd5; background: #f4eefb; color: #65429f; }
+  .recording-dot { width: 7px; height: 7px; border-radius: 50%; background: #8155c7; box-shadow: 0 0 0 4px rgba(129,85,199,.12); }
+  .plus { margin: 0 1px; color: #9a94a0; }
   kbd { display: inline-flex; min-width: 24px; justify-content: center; padding: 3px 6px; border: 1px solid #d8d3cb; border-radius: 6px; background: #faf9f7; box-shadow: 0 1px 0 #c9c4bc; color: #505767; font-family: inherit; font-size: 11px; }
+  .shortcut-error { margin: 7px 4px 0; color: #a43f50; font-size: 11px; }
   .status { min-height: 18px; margin: 13px 0 0; color: #6d7485; text-align: center; font-size: 12px; }
   .debug-e2e-shell { display: grid; place-items: center; min-height: 100vh; padding: 30px; }
   .debug-e2e-shell textarea { width: 100%; min-height: 180px; }

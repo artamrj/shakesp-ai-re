@@ -15,7 +15,8 @@ Select text in any application, press a global shortcut, and a small floating po
 
 M2 native flow implemented: the global shortcut captures selected text, restores the clipboard,
 opens a frameless popup, streams an OpenAI-compatible chat completion, and supports Enter to
-replace or Esc to cancel.
+replace or Esc to cancel. The global shortcut can be recorded and changed from the settings
+window; changes are applied immediately and persist across launches.
 
 ## Getting started
 

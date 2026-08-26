@@ -7,6 +7,7 @@ use std::{
     fs,
     io::ErrorKind,
     path::PathBuf,
+    str::FromStr,
     sync::{Mutex, OnceLock},
     time::{Duration, Instant},
 };
@@ -17,10 +18,11 @@ use keyring::{Entry, Error as KeyringError};
 use popup::PopupWindow;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tokio_stream::StreamExt;
 
 static AI_CONFIG: OnceLock<Mutex<AiConfig>> = OnceLock::new();
+static ACTIVE_SHORTCUT: OnceLock<Mutex<String>> = OnceLock::new();
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 const DEFAULT_MODEL: &str = "gpt-4o-mini";
 const KEYCHAIN_SERVICE: &str = "com.artamrj.shakespaire";
@@ -53,6 +55,16 @@ struct StreamRetryEvent {
 struct PersistedAiConfig {
     base_url: String,
     model: String,
+    #[serde(default = "default_shortcut")]
+    shortcut: String,
+}
+
+fn default_shortcut() -> String {
+    if cfg!(target_os = "macos") {
+        "Shift+Super+Space".to_string()
+    } else {
+        "Shift+Control+Space".to_string()
+    }
 }
 
 fn default_ai_config() -> AiConfig {
@@ -65,6 +77,20 @@ fn default_ai_config() -> AiConfig {
 
 fn ai_config() -> &'static Mutex<AiConfig> {
     AI_CONFIG.get_or_init(|| Mutex::new(default_ai_config()))
+}
+
+fn active_shortcut() -> &'static Mutex<String> {
+    ACTIVE_SHORTCUT.get_or_init(|| Mutex::new(default_shortcut()))
+}
+
+fn parse_shortcut(value: &str) -> Result<Shortcut, String> {
+    let shortcut = Shortcut::from_str(value.trim()).map_err(|_| {
+        "Press a modifier and one other key (for example, Command + Shift + Space).".to_string()
+    })?;
+    if shortcut.mods.is_empty() {
+        return Err("The shortcut must include Command, Control, Option, or Shift.".to_string());
+    }
+    Ok(shortcut)
 }
 
 fn settings_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -196,6 +222,14 @@ fn load_ai_config(app: &AppHandle) -> Result<(), String> {
                 if !saved.model.trim().is_empty() {
                     config.model = saved.model;
                 }
+                match parse_shortcut(&saved.shortcut) {
+                    Ok(shortcut) => {
+                        *active_shortcut()
+                            .lock()
+                            .map_err(|error| error.to_string())? = shortcut.to_string();
+                    }
+                    Err(error) => log::warn!("ignoring invalid saved shortcut: {error}"),
+                }
             }
             Err(error) => log::warn!("could not parse persisted AI settings: {error}"),
         },
@@ -239,6 +273,10 @@ fn persist_ai_config(app: &AppHandle, config: &AiConfig) -> Result<(), String> {
     let persisted = PersistedAiConfig {
         base_url: config.base_url.clone(),
         model: config.model.clone(),
+        shortcut: active_shortcut()
+            .lock()
+            .map_err(|error| error.to_string())?
+            .clone(),
     };
     let contents = serde_json::to_vec_pretty(&persisted)
         .map_err(|error| format!("could not encode settings: {error}"))?;
@@ -252,17 +290,34 @@ fn persist_ai_config(app: &AppHandle, config: &AiConfig) -> Result<(), String> {
 
 #[cfg(test)]
 mod persistence_tests {
-    use super::PersistedAiConfig;
+    use super::{default_shortcut, parse_shortcut, PersistedAiConfig};
 
     #[test]
     fn persisted_settings_never_contain_an_api_key() {
         let settings = PersistedAiConfig {
             base_url: "https://example.com/v1".to_string(),
             model: "example-model".to_string(),
+            shortcut: "Control+Shift+Space".to_string(),
         };
         let json = serde_json::to_string(&settings).expect("settings should serialize");
 
         assert!(!json.contains("api_key"));
+    }
+
+    #[test]
+    fn old_settings_receive_the_default_shortcut() {
+        let settings: PersistedAiConfig = serde_json::from_str(
+            r#"{"base_url":"https://example.com/v1","model":"example-model"}"#,
+        )
+        .expect("old settings should remain compatible");
+
+        assert_eq!(settings.shortcut, default_shortcut());
+    }
+
+    #[test]
+    fn shortcut_requires_a_modifier() {
+        assert!(parse_shortcut("KeyK").is_err());
+        assert!(parse_shortcut("Control+KeyK").is_ok());
     }
 }
 
@@ -289,6 +344,63 @@ fn get_ai_config() -> Result<AiConfig, String> {
         .lock()
         .map(|config| config.clone())
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn get_shortcut() -> Result<String, String> {
+    active_shortcut()
+        .lock()
+        .map(|shortcut| shortcut.clone())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn set_shortcut(app: AppHandle, shortcut: String) -> Result<String, String> {
+    let new_shortcut = parse_shortcut(&shortcut)?;
+    let canonical = new_shortcut.to_string();
+    let previous = active_shortcut()
+        .lock()
+        .map_err(|error| error.to_string())?
+        .clone();
+
+    if canonical == previous {
+        return Ok(canonical);
+    }
+
+    register_global_shortcut(&app, new_shortcut).map_err(|error| {
+        format!(
+            "That shortcut could not be registered. It may already be used by another app: {error}"
+        )
+    })?;
+
+    if let Err(error) = app.global_shortcut().unregister(previous.as_str()) {
+        if app.global_shortcut().is_registered(previous.as_str()) {
+            let _ = app.global_shortcut().unregister(new_shortcut);
+            return Err(format!("Could not replace the current shortcut: {error}"));
+        }
+        log::warn!("previous shortcut was not registered: {error}");
+    }
+
+    *active_shortcut()
+        .lock()
+        .map_err(|error| error.to_string())? = canonical.clone();
+    let config = ai_config()
+        .lock()
+        .map_err(|error| error.to_string())?
+        .clone();
+    if let Err(error) = persist_ai_config(&app, &config) {
+        let _ = app.global_shortcut().unregister(new_shortcut);
+        if let Ok(old_shortcut) = parse_shortcut(&previous) {
+            let _ = register_global_shortcut(&app, old_shortcut);
+        }
+        *active_shortcut()
+            .lock()
+            .map_err(|lock_error| lock_error.to_string())? = previous;
+        return Err(format!("Could not save the shortcut: {error}"));
+    }
+
+    log::info!("global shortcut changed to {canonical}");
+    Ok(canonical)
 }
 
 #[tauri::command]
@@ -530,17 +642,28 @@ fn run_shortcut_flow(app: AppHandle) {
     });
 }
 
-fn setup_global_shortcut(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let shortcut = Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::Space);
+fn register_global_shortcut(app: &AppHandle, shortcut: Shortcut) -> Result<(), String> {
     app.global_shortcut()
         .on_shortcut(shortcut, move |app, _shortcut, event| {
             if event.state() == ShortcutState::Released {
                 log::info!("global shortcut triggered");
                 run_shortcut_flow(app.clone());
             }
-        })?;
+        })
+        .map_err(|error| error.to_string())?;
 
-    log::info!("global shortcut registered: Cmd+Shift+Space");
+    Ok(())
+}
+
+fn setup_global_shortcut(app: &AppHandle) -> Result<(), String> {
+    let configured = active_shortcut()
+        .lock()
+        .map_err(|error| error.to_string())?
+        .clone();
+    let shortcut = parse_shortcut(&configured)?;
+    register_global_shortcut(app, shortcut)?;
+
+    log::info!("global shortcut registered: {configured}");
     Ok(())
 }
 
@@ -603,7 +726,11 @@ fn init_logger() {
     if let Some(log_dir) = log_dir {
         let _ = fs::create_dir_all(&log_dir);
         let log_path = log_dir.join("shakespaire.log");
-        match fs::OpenOptions::new().create(true).append(true).open(&log_path) {
+        match fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+        {
             Ok(file) => {
                 builder.target(env_logger::Target::Pipe(Box::new(file)));
                 eprintln!("logging to {}", log_path.display());
@@ -629,6 +756,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             set_ai_config,
             get_ai_config,
+            get_shortcut,
+            set_shortcut,
             capture_selected_text,
             get_popup_selection,
             replace_text,
