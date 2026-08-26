@@ -70,9 +70,9 @@ The trigger shortcut is fully [customizable](#customizing-the-shortcut).
 
 ### The proofread popup
 
-<!-- <p align="center">
+<p align="center">
   <img src="assets/screenshots/popup-streaming.png" width="360" alt="shakespAIre popup streaming a proofread" />
-</p> -->
+</p>
 
 The popup shows a status pill while working (`Connecting` → `Writing` → `Ready`), renders the result as sanitized markdown, and exposes three actions: **Replace**, **Copy**, and **Close**. On a connection error it shows the message and a **Try again** button.
 
@@ -83,8 +83,6 @@ Open **Settings** (the main window) to configure the AI endpoint.
 <p align="center">
   <img src="assets/screenshots/settings.png" width="420" alt="shakespAIre settings window" />
 </p>
-
-> **Add this screenshot:** capture the main/settings window showing the *OpenAI-compatible endpoint* card and the shortcut recorder. Save as `assets/screenshots/settings.png`.
 
 ### OpenAI-compatible endpoint
 
@@ -120,7 +118,6 @@ Point shakespAIre at a local server to keep your text on your machine — no API
   <img src="assets/screenshots/shortcut-recorder.png" width="420" alt="shakespAIre shortcut recorder" />
 </p>
 
-> **Add this screenshot:** click the shortcut recorder so it shows "Hold modifier(s) + one key. Esc cancels.", then capture. Save as `assets/screenshots/shortcut-recorder.png`.
 
 1. Open **Settings**.
 2. Click the shortcut recorder — it prompts: *"Hold modifier(s) + one key. Esc cancels."*
