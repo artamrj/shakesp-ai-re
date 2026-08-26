@@ -2,7 +2,7 @@
 
 The bundle configuration is split by operating system and merged automatically by Tauri:
 
-- macOS: `.app` and `.dmg`, Intel and Apple Silicon
+- macOS: `.app` and `.dmg`, Apple Silicon
 - Windows: per-user NSIS `.exe` and WiX `.msi`
 - Linux: AppImage, Debian `.deb`, and RPM
 
@@ -21,7 +21,7 @@ npm run bundle:linux
 
 Windows MSI uses WiX and must be built on Windows. Linux should be built on the oldest supported
 Linux baseline; the release workflow uses Ubuntu 22.04 to avoid unnecessarily raising the glibc
-requirement. The GitHub workflow builds both macOS architectures and x64 Windows/Linux bundles.
+requirement. The GitHub workflow builds Apple Silicon macOS and x64 Windows/Linux bundles.
 
 Before tagging a release, keep these versions identical:
 

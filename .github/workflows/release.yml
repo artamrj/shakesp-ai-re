@@ -19,10 +19,6 @@ jobs:
             platform: macos-latest
             args: --target aarch64-apple-darwin
             rust_targets: aarch64-apple-darwin
-          - name: macOS Intel
-            platform: macos-latest
-            args: --target x86_64-apple-darwin
-            rust_targets: x86_64-apple-darwin
           - name: Windows x64
             platform: windows-latest
             args: ""
