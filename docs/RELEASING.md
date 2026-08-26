@@ -23,6 +23,13 @@ Windows MSI uses WiX and must be built on Windows. Linux should be built on the 
 Linux baseline; the release workflow uses Ubuntu 22.04 to avoid unnecessarily raising the glibc
 requirement. The GitHub workflow builds Apple Silicon macOS and x64 Windows/Linux bundles.
 
+The Windows job also uploads a `shakespAIre-windows-x64-portable` workflow artifact for testing.
+After downloading and extracting it, run `shakespAIre.exe` directly; it does not install files or
+require administrator rights. The portable executable expects Microsoft Edge WebView2 to already
+be present, as it normally is on supported Windows systems. It is not a way to bypass endpoint
+security: unsigned portable executables can still be inspected or blocked by products such as
+Cortex XDR.
+
 Before tagging a release, keep these versions identical:
 
 - `src-tauri/tauri.conf.json > version`

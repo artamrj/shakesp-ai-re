@@ -75,3 +75,29 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+      - name: Package portable Windows test build
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $portableDirectory = "portable/shakespAIre"
+          New-Item -ItemType Directory -Path $portableDirectory -Force | Out-Null
+          Copy-Item "src-tauri/target/release/shakespaire.exe" "$portableDirectory/shakespAIre.exe"
+          Set-Content -Path "$portableDirectory/README.txt" -Value @"
+          shakespAIre portable test build
+
+          Run shakespAIre.exe directly. Installation and administrator rights are not required.
+          Microsoft Edge WebView2 must already be installed on the computer.
+
+          This build is not digitally signed. Endpoint security software may still inspect or block it.
+          Do not disable endpoint protection; ask your IT/security administrator to review the file.
+          "@
+          Compress-Archive -Path "$portableDirectory/*" -DestinationPath "portable/shakespAIre-windows-x64-portable.zip" -Force
+
+      - name: Upload portable Windows test build
+        if: matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: shakespAIre-windows-x64-portable
+          path: portable/shakespAIre-windows-x64-portable.zip
+          if-no-files-found: error
