@@ -73,7 +73,7 @@ pub fn write_to_clipboard<R: Runtime>(app: &AppHandle<R>, text: &str) -> Result<
 pub async fn capture_selected_text<R: Runtime>(app: &AppHandle<R>) -> Result<String, String> {
     save_clipboard(app)?;
 
-    let sentinel = format!("shakespaire-selection-{}", std::process::id());
+    let sentinel = format!("shakesp-ai-re-selection-{}", std::process::id());
     let capture_result = async {
         let modifier_deadline =
             tokio::time::Instant::now() + tokio::time::Duration::from_millis(1200);
@@ -96,6 +96,10 @@ pub async fn capture_selected_text<R: Runtime>(app: &AppHandle<R>) -> Result<Str
                 }
             }
             if tokio::time::Instant::now() >= deadline {
+                #[cfg(target_os = "macos")]
+                if !input::accessibility_trusted() {
+                    break Err("Accessibility permission is missing. Enable it for this app (or the terminal running it) in System Settings → Privacy & Security → Accessibility, then try again.".to_string());
+                }
                 break Err("no text selection was captured".to_string());
             }
             tokio::time::sleep(tokio::time::Duration::from_millis(8)).await;

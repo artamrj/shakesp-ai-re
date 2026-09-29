@@ -1,5 +1,6 @@
 mod ai;
 mod clipboard;
+mod glass;
 mod input;
 mod popup;
 
@@ -8,7 +9,10 @@ use std::{
     io::ErrorKind,
     path::PathBuf,
     str::FromStr,
-    sync::{Mutex, OnceLock},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex, OnceLock,
+    },
     time::{Duration, Instant},
 };
 
@@ -23,14 +27,38 @@ use tokio_stream::StreamExt;
 
 static AI_CONFIG: OnceLock<Mutex<AiConfig>> = OnceLock::new();
 static ACTIVE_SHORTCUT: OnceLock<Mutex<String>> = OnceLock::new();
+static REPLACE_SHORTCUT: OnceLock<Mutex<String>> = OnceLock::new();
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 const DEFAULT_MODEL: &str = "gpt-5.6-luna";
-const KEYCHAIN_SERVICE: &str = "com.artamrj.shakespaire";
+const KEYCHAIN_SERVICE: &str = "com.artamrj.shakesp-ai-re";
+/// Keychain service used before the app was renamed to shakesp-ai-re.
+const LEGACY_KEYCHAIN_SERVICE: &str = "com.artamrj.shakespaire";
 const KEYCHAIN_ACCOUNT: &str = "ai-api-key";
 const SETTINGS_FILE: &str = "ai-settings.json";
 const FALLBACK_KEY_FILE: &str = "ai-api-key.txt";
 const STREAM_MAX_ATTEMPTS: usize = 3;
 const STREAM_RETRY_DELAYS_MS: [u64; STREAM_MAX_ATTEMPTS - 1] = [250, 700];
+
+/// Capture and replace both borrow the user's clipboard through one shared
+/// save slot, so only one of them may run at a time.
+static CLIPBOARD_BUSY: AtomicBool = AtomicBool::new(false);
+
+struct ClipboardGuard;
+
+impl ClipboardGuard {
+    fn acquire() -> Option<Self> {
+        CLIPBOARD_BUSY
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .ok()
+            .map(|_| Self)
+    }
+}
+
+impl Drop for ClipboardGuard {
+    fn drop(&mut self) {
+        CLIPBOARD_BUSY.store(false, Ordering::Release);
+    }
+}
 
 /// Human-readable name of the platform credential store used in log/user messages.
 fn credential_store_name() -> &'static str {
@@ -57,6 +85,40 @@ struct PersistedAiConfig {
     model: String,
     #[serde(default = "default_shortcut")]
     shortcut: String,
+    #[serde(default = "default_replace_shortcut")]
+    replace_shortcut: String,
+}
+
+fn default_replace_shortcut() -> String {
+    "Enter".to_string()
+}
+
+fn replace_shortcut() -> &'static Mutex<String> {
+    REPLACE_SHORTCUT.get_or_init(|| Mutex::new(default_replace_shortcut()))
+}
+
+/// The replace key is handled inside the popup, so it only needs to be a sane
+/// "Modifier+Code" string that cannot collide with the popup's fixed keys.
+fn validate_replace_shortcut(value: &str) -> Result<(), String> {
+    let parts: Vec<&str> = value.split('+').collect();
+    let key = parts.last().copied().unwrap_or_default();
+    let modifiers = &parts[..parts.len().saturating_sub(1)];
+    let well_formed = !key.is_empty()
+        && value.len() <= 40
+        && value.chars().all(|c| c.is_ascii_alphanumeric() || c == '+')
+        && modifiers
+            .iter()
+            .all(|m| matches!(*m, "Control" | "Alt" | "Shift" | "Super"));
+    if !well_formed {
+        return Err("That key combination is not valid.".to_string());
+    }
+    if key == "Escape" {
+        return Err("Escape closes the popup, so it can't be the replace key.".to_string());
+    }
+    if key == "KeyC" && modifiers.iter().any(|m| matches!(*m, "Control" | "Super")) {
+        return Err("That combination is used for Copy. Choose another.".to_string());
+    }
+    Ok(())
 }
 
 fn default_shortcut() -> String {
@@ -112,6 +174,23 @@ fn fallback_key_path(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|error| format!("could not resolve fallback key directory: {error}"))
 }
 
+/// Moves an API key saved under the pre-rename keychain service into the current one.
+fn migrate_legacy_api_key(current: &Entry) -> Option<String> {
+    let legacy = Entry::new(LEGACY_KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT).ok()?;
+    let api_key = legacy.get_password().ok().filter(|key| !key.trim().is_empty())?;
+    match current.set_password(&api_key) {
+        Ok(()) => {
+            // Remove the old copy so a key the user later clears cannot be restored from it.
+            if let Err(error) = legacy.delete_credential() {
+                log::warn!("could not remove the legacy API key entry: {error}");
+            }
+            log::info!("migrated API key from the legacy keychain entry");
+        }
+        Err(error) => log::warn!("could not copy the legacy API key: {error}"),
+    }
+    Some(api_key)
+}
+
 /// Reads the API key from the encrypted platform keychain, falling back to a
 /// local file when the keychain is unavailable (common on Linux without
 /// gnome-keyring/kwallet and on some Windows configurations).
@@ -119,7 +198,11 @@ fn load_api_key(app: &AppHandle) -> String {
     if let Ok(entry) = keychain_entry() {
         match entry.get_password() {
             Ok(api_key) => return api_key,
-            Err(KeyringError::NoEntry) => {}
+            Err(KeyringError::NoEntry) => {
+                if let Some(api_key) = migrate_legacy_api_key(&entry) {
+                    return api_key;
+                }
+            }
             Err(error) => log::warn!(
                 "could not read API key from {}: {error}",
                 credential_store_name()
@@ -222,6 +305,11 @@ fn load_ai_config(app: &AppHandle) -> Result<(), String> {
                 if !saved.model.trim().is_empty() {
                     config.model = saved.model;
                 }
+                if validate_replace_shortcut(&saved.replace_shortcut).is_ok() {
+                    *replace_shortcut()
+                        .lock()
+                        .map_err(|error| error.to_string())? = saved.replace_shortcut;
+                }
                 match parse_shortcut(&saved.shortcut) {
                     Ok(shortcut) => {
                         *active_shortcut()
@@ -262,7 +350,11 @@ fn persist_ai_config(app: &AppHandle, config: &AiConfig) -> Result<(), String> {
     // app remains usable on Linux without gnome-keyring/kwallet and on Windows
     // configurations where the Credential Manager is locked down.
     save_api_key(app, &config.api_key)?;
+    write_settings_file(app, config)
+}
 
+/// Writes ai-settings.json (never the API key).
+fn write_settings_file(app: &AppHandle, config: &AiConfig) -> Result<(), String> {
     let path = settings_path(app)?;
     let directory = path
         .parent()
@@ -274,6 +366,10 @@ fn persist_ai_config(app: &AppHandle, config: &AiConfig) -> Result<(), String> {
         base_url: config.base_url.clone(),
         model: config.model.clone(),
         shortcut: active_shortcut()
+            .lock()
+            .map_err(|error| error.to_string())?
+            .clone(),
+        replace_shortcut: replace_shortcut()
             .lock()
             .map_err(|error| error.to_string())?
             .clone(),
@@ -298,6 +394,7 @@ mod persistence_tests {
             base_url: "https://example.com/v1".to_string(),
             model: "example-model".to_string(),
             shortcut: "Control+Shift+Space".to_string(),
+            replace_shortcut: "Enter".to_string(),
         };
         let json = serde_json::to_string(&settings).expect("settings should serialize");
 
@@ -312,6 +409,16 @@ mod persistence_tests {
         .expect("old settings should remain compatible");
 
         assert_eq!(settings.shortcut, default_shortcut());
+    }
+
+    #[test]
+    fn replace_shortcut_rejects_reserved_and_malformed_keys() {
+        assert!(super::validate_replace_shortcut("Enter").is_ok());
+        assert!(super::validate_replace_shortcut("Shift+Enter").is_ok());
+        assert!(super::validate_replace_shortcut("Escape").is_err());
+        assert!(super::validate_replace_shortcut("Super+KeyC").is_err());
+        assert!(super::validate_replace_shortcut("Bogus+Enter").is_err());
+        assert!(super::validate_replace_shortcut("").is_err());
     }
 
     #[test]
@@ -344,6 +451,37 @@ fn get_ai_config() -> Result<AiConfig, String> {
         .lock()
         .map(|config| config.clone())
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn get_replace_shortcut() -> Result<String, String> {
+    replace_shortcut()
+        .lock()
+        .map(|value| value.clone())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn set_replace_shortcut(app: AppHandle, shortcut: String) -> Result<String, String> {
+    validate_replace_shortcut(&shortcut)?;
+    let previous = replace_shortcut()
+        .lock()
+        .map_err(|error| error.to_string())?
+        .clone();
+    *replace_shortcut()
+        .lock()
+        .map_err(|error| error.to_string())? = shortcut.clone();
+    let config = ai_config()
+        .lock()
+        .map_err(|error| error.to_string())?
+        .clone();
+    if let Err(error) = persist_ai_config(&app, &config) {
+        *replace_shortcut()
+            .lock()
+            .map_err(|lock_error| lock_error.to_string())? = previous;
+        return Err(format!("Could not save the replace key: {error}"));
+    }
+    Ok(shortcut)
 }
 
 #[tauri::command]
@@ -429,13 +567,17 @@ async fn replace_text(app: AppHandle, text: String) -> Result<(), String> {
         return Err("replacement text is empty".to_string());
     }
 
+    let _clipboard = ClipboardGuard::acquire()
+        .ok_or_else(|| "another capture or replace is still in progress".to_string())?;
     save_clipboard(&app)?;
     let source_application = PopupWindow::source_application()?;
     let paste_result = async {
         PopupWindow::close(&app)?;
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         if let Some(source_application) = source_application {
-            input::activate_application(&source_application)?;
+            tokio::task::spawn_blocking(move || input::activate_application(&source_application))
+                .await
+                .map_err(|error| error.to_string())??;
         }
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         write_to_clipboard(&app, &text)?;
@@ -581,6 +723,56 @@ fn surface_stream_error(
     Err(error)
 }
 
+/// Checks the endpoint values from the form without saving them, and without
+/// touching the popup or its stream state.
+#[tauri::command]
+async fn test_ai_connection(mut config: AiConfig) -> Result<(), String> {
+    config.base_url = config.base_url.trim().to_string();
+    config.model = config.model.trim().to_string();
+    let check = async {
+        let mut stream = stream_chat(&config, "Reply with the single word: ready", "ping")
+            .await
+            .map_err(|error| error.to_string())?;
+        while let Some(chunk) = stream.next().await {
+            if !chunk.map_err(|error| error.to_string())?.is_empty() {
+                return Ok(());
+            }
+        }
+        Err("The AI service connected but returned no text.".to_string())
+    };
+    tokio::time::timeout(Duration::from_secs(45), check)
+        .await
+        .map_err(|_| "The AI service took too long to answer.".to_string())?
+}
+
+#[tauri::command]
+fn accessibility_trusted() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        input::accessibility_trusted()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        true
+    }
+}
+
+#[tauri::command]
+fn open_accessibility_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+            .spawn()
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(())
+    }
+}
+
 #[tauri::command]
 fn show_popup(app: AppHandle, selected_text: String) -> Result<(), String> {
     let source_application = input::frontmost_application().ok();
@@ -593,13 +785,27 @@ fn test_popup(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn resize_popup(app: AppHandle, height: f64) -> Result<(), String> {
+    PopupWindow::resize(&app, height)
+}
+
+#[tauri::command]
 fn close_popup(app: AppHandle) -> Result<(), String> {
-    PopupWindow::close(&app)
+    PopupWindow::close(&app)?;
+    // The popup took keyboard focus, so hand it back to the app the text came from.
+    // (Click-away and Replace do their own focus handling.)
+    #[cfg(target_os = "macos")]
+    if let Ok(Some(source_application)) = PopupWindow::source_application() {
+        std::thread::spawn(move || {
+            let _ = input::activate_application(&source_application);
+        });
+    }
+    Ok(())
 }
 
 #[tauri::command]
 fn debug_e2e_enabled() -> bool {
-    cfg!(debug_assertions) && std::env::var("SHAKESPAIRE_E2E").as_deref() == Ok("1")
+    cfg!(debug_assertions) && std::env::var("SHAKESP_AI_RE_E2E").as_deref() == Ok("1")
 }
 
 #[tauri::command]
@@ -622,12 +828,63 @@ fn debug_e2e_report(selected_text: String, output_text: String, error: String) {
     log::info!("M2_E2E_REPORT selected={selected_text:?} output={output_text:?} error={error:?}");
 }
 
+fn show_settings_window(app: &AppHandle) {
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.unminimize();
+        let _ = main.show();
+        let _ = main.set_focus();
+    }
+}
+
+/// Menu-bar / system-tray presence. The settings window stays hidden until
+/// asked for, so the app costs nothing on screen while it waits for the shortcut.
+fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
+    use tauri::{
+        menu::{Menu, MenuItem, PredefinedMenuItem},
+        tray::TrayIconBuilder,
+    };
+
+    let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit shakespAIre", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&settings, &PredefinedMenuItem::separator(app)?, &quit])?;
+
+    let mut tray = TrayIconBuilder::with_id("main")
+        .tooltip("shakespAIre")
+        .menu(&menu)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "settings" => show_settings_window(app),
+            "quit" => app.exit(0),
+            _ => {}
+        });
+
+    #[cfg(target_os = "macos")]
+    {
+        // A monochrome template image is tinted by macOS for light/dark menu bars.
+        tray = tray
+            .icon(tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?)
+            .icon_as_template(true);
+    }
+    #[cfg(not(target_os = "macos"))]
+    if let Some(icon) = app.default_window_icon() {
+        tray = tray.icon(icon.clone());
+    }
+
+    tray.build(app)?;
+    Ok(())
+}
+
 fn run_shortcut_flow(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
+        let Some(_clipboard) = ClipboardGuard::acquire() else {
+            log::info!("shortcut ignored: a capture or replace is already running");
+            return;
+        };
         let shortcut_started = Instant::now();
-        let source_application = input::frontmost_application().ok();
+        // osascript is slow and blocking; overlap it with the text capture.
+        let source_task = tokio::task::spawn_blocking(input::frontmost_application);
         let result = async {
             let selected = clipboard::capture_selected_text(&app).await?;
+            let source_application = source_task.await.ok().and_then(Result::ok);
             log::info!(
                 "captured {} selected characters in {} ms",
                 selected.chars().count(),
@@ -739,11 +996,11 @@ fn init_logger() {
     // `data_local_dir` is appropriate for log files on all platforms.
     let log_dir = dirs_next::data_local_dir()
         .or_else(dirs_next::config_dir)
-        .map(|d| d.join("shakespaire").join("logs"));
+        .map(|d| d.join("shakesp-ai-re").join("logs"));
 
     if let Some(log_dir) = log_dir {
         let _ = fs::create_dir_all(&log_dir);
-        let log_path = log_dir.join("shakespaire.log");
+        let log_path = log_dir.join("shakesp-ai-re.log");
         match fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -768,13 +1025,27 @@ pub fn run() {
     log::info!("shakespAIre starting on {}", std::env::consts::OS);
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .on_window_event(|window, event| {
+            // Closing the settings window only hides it; Quit lives in the tray menu.
+            if window.label() == "main" {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             set_ai_config,
             get_ai_config,
             get_shortcut,
+            get_replace_shortcut,
+            set_replace_shortcut,
             set_shortcut,
             capture_selected_text,
             get_popup_selection,
@@ -782,8 +1053,12 @@ pub fn run() {
             get_popup_error,
             replace_text,
             stream_ai_text,
+            test_ai_connection,
+            accessibility_trusted,
+            open_accessibility_settings,
             show_popup,
             test_popup,
+            resize_popup,
             close_popup,
             debug_e2e_enabled,
             debug_trigger_shortcut,
@@ -793,7 +1068,27 @@ pub fn run() {
             // Loading config is essential but already logs warnings on failure
             // and never returns an error for keychain/file issues, so the `?`
             // here only surfaces genuinely fatal config problems.
+            let first_run = settings_path(app.handle())
+                .map(|path| !path.exists())
+                .unwrap_or(true);
             load_ai_config(app.handle())?;
+
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            if let Err(error) = setup_tray(app.handle()) {
+                log::warn!("could not create the tray icon: {error}");
+                // Without a tray there would be no way back in; keep the window.
+                show_settings_window(app.handle());
+            } else if first_run || debug_e2e_enabled() {
+                show_settings_window(app.handle());
+            }
+            if first_run {
+                // Create the settings file now so the window is only auto-opened once.
+                // Defaults only: environment overrides must not be saved permanently.
+                if let Err(error) = write_settings_file(app.handle(), &default_ai_config()) {
+                    log::warn!("could not record first run: {error}");
+                }
+            }
 
             // Prewarming the popup window and registering the global shortcut
             // are best-effort: they commonly fail on Linux (no keyring, X11 vs

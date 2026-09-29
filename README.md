@@ -1,10 +1,10 @@
 <div align="center">
 
-<img src="assets/branding/shakespaire-icon-master.png" width="120" alt="shakespAIre" />
+<img src="assets/branding/shakesp-ai-re-icon-master.png" width="120" alt="shakespAIre" />
 
 # shakespAIre
 
-**Select. Shortcut. ShakespAIre it.**
+**Select. Shortcut. shakespAIre it.**
 
 Universal AI-powered proofreading for **macOS, Windows, and Linux**.
 
@@ -31,7 +31,7 @@ Select text in **any** application, press a global shortcut, and a small floatin
 
 - **Works anywhere** — email, docs, browsers, terminals, chat apps. Not bound to any single editor.
 - **Strict proofreading** — fixes only grammar, spelling, and punctuation. Preserves your meaning, voice, tone, style, slang, dialect, emoji, and formatting.
-- **Streaming results** — output streams in as it's generated, rendered as sanitized markdown.
+- **Streaming results** — output streams in as it's generated and is shown exactly as it will be pasted.
 - **Customizable shortcut** — record your own global shortcut from Settings; changes apply immediately and persist across launches.
 - **OpenAI-compatible** — bring your own API key, or point it at a local model (Ollama, LM Studio, anything speaking the Chat Completions API).
 - **Keychain-secured** — your API key lives in the OS keychain, never in a plain settings file.
@@ -70,19 +70,11 @@ The trigger shortcut is fully [customizable](#customizing-the-shortcut).
 
 ### The proofread popup
 
-<p align="center">
-  <img src="assets/screenshots/popup-streaming.png" width="360" alt="shakespAIre popup streaming a proofread" />
-</p>
-
-The popup shows a status pill while working (`Connecting` → `Writing` → `Ready`), renders the result as sanitized markdown, and exposes three actions: **Replace**, **Copy**, and **Close**. On a connection error it shows the message and a **Try again** button.
+The popup shows a status pill while working (`Connecting` → `Writing` → `Ready`), shows the result exactly as it will be pasted, and exposes three actions: **Replace**, **Copy**, and **Close**. On a connection error it shows the message and a **Try again** button.
 
 ## Configuration
 
-Open **Settings** (the main window) to configure the AI endpoint.
-
-<p align="center">
-  <img src="assets/screenshots/settings.png" width="420" alt="shakespAIre settings window" />
-</p>
+shakespAIre lives in the menu bar (system tray on Windows/Linux). Choose **Settings…** from its icon to configure the AI endpoint.
 
 ### OpenAI-compatible endpoint
 
@@ -103,20 +95,16 @@ Point shakespAIre at a local server to keep your text on your machine — no API
 
 ### Where secrets are stored
 
-- **API key** → OS keychain (service `com.artamrj.shakespaire`, account `ai-api-key`). A plaintext file (`ai-api-key.txt`) is used only as a fallback if the keychain is unavailable.
+- **API key** → OS keychain (service `com.artamrj.shakesp-ai-re`, account `ai-api-key`). A plaintext file (`ai-api-key.txt`) is used only as a fallback if the keychain is unavailable.
 - **Settings file** (`ai-settings.json`) stores the base URL, model, and shortcut — **never the API key** (enforced by a unit test).
 - **Dev overrides:** `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `OPENAI_MODEL` environment variables take precedence over the settings file.
 
 ### Diagnostics
 
-- **Test API** — saves the config and sends a tiny request to verify the endpoint.
-- **Test popup** — opens the popup in preview mode, bypassing the shortcut, selection capture, and AI call. Useful for checking that popup rendering works on a given device.
+- **Test connection** — sends a tiny request with the values in the form (without saving them) to verify the endpoint.
+- **Preview popup** — opens the popup on a sample sentence and streams a real proofread, bypassing the shortcut and selection capture. Replace is disabled in the preview.
 
 ## Customizing the shortcut
-
-<p align="center">
-  <img src="assets/screenshots/shortcut-recorder.png" width="420" alt="shakespAIre shortcut recorder" />
-</p>
 
 
 1. Open **Settings**.
@@ -132,7 +120,7 @@ Point shakespAIre at a local server to keep your text on your machine — no API
 - **Accessibility permission required.** Selection capture and replacement simulate **⌘C/⌘V** and read selection bounds via the Accessibility API. Grant it under **System Settings → Privacy & Security → Accessibility**.
 - The popup positions itself next to the selected text (when the focused app exposes selection bounds).
 - The window uses the native **Liquid Glass** effect (with a vibrancy fallback), so it is **direct-download only** — not available on the Mac App Store.
-- Stable Developer ID signing with the unchanged bundle id `com.artamrj.shakespaire` reduces repeated Accessibility prompts.
+- Stable Developer ID signing with the unchanged bundle id `com.artamrj.shakesp-ai-re` reduces repeated Accessibility prompts.
 
 </details>
 
@@ -189,7 +177,7 @@ npm run bundle:linux    # AppImage + .deb + .rpm
 Regenerate icons from the master source:
 
 ```bash
-npm run icons        # tauri icon assets/branding/shakespaire-icon-master.png
+npm run icons        # tauri icon assets/branding/shakesp-ai-re-icon-master.png
 ```
 
 ## Releasing

@@ -1,10 +1,12 @@
+use std::sync::OnceLock;
+
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::mpsc;
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 
 const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
-const RESPONSE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+const RESPONSE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(45);
 const ERROR_BODY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 const STREAM_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 
@@ -170,6 +172,25 @@ Return ONLY the corrected text. No explanations, labels, quotes, preamble, or ma
         .to_string()
 }
 
+static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
+/// One shared client so consecutive proofreads reuse the pooled TCP/TLS
+/// connection instead of paying DNS + handshake latency every time.
+fn http_client() -> Result<&'static reqwest::Client, AiError> {
+    if let Some(client) = HTTP_CLIENT.get() {
+        return Ok(client);
+    }
+    let client = reqwest::Client::builder()
+        .connect_timeout(CONNECT_TIMEOUT)
+        .tcp_keepalive(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|error| {
+            log::error!("could not create AI HTTP client: {error}");
+            AiError::new("Could not prepare the AI connection.", true)
+        })?;
+    Ok(HTTP_CLIENT.get_or_init(|| client))
+}
+
 pub async fn stream_chat(
     config: &AiConfig,
     system_prompt: &str,
@@ -183,14 +204,7 @@ pub async fn stream_chat(
     }
 
     let url = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
-    let client = reqwest::Client::builder()
-        .connect_timeout(CONNECT_TIMEOUT)
-        .build()
-        .map_err(|error| {
-            log::error!("could not create AI HTTP client: {error}");
-            AiError::new("Could not prepare the AI connection.", true)
-        })?;
-    let mut request = client.post(url).json(&json!({
+    let mut request = http_client()?.post(url).json(&json!({
         "model": config.model,
         "messages": [
             { "role": "system", "content": system_prompt },
