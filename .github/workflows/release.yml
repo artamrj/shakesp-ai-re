@@ -17,8 +17,31 @@ on:
         type: string
 
 jobs:
+  # The three platform builds all upload to the same release. If it does not exist yet they would
+  # race to create it and the losers fail, so create it once, first. Nothing happens if
+  # release-please (or an earlier run) already made it.
+  prepare:
+    name: Make sure the draft release exists
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Create the draft release if it is missing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists."
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft \
+              --title "shakespAIre $TAG" --notes "Installers for $TAG."
+          fi
+
   build:
     name: ${{ matrix.name }}
+    needs: prepare
     permissions:
       contents: write
     strategy:
