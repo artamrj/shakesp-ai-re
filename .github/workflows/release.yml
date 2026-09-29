@@ -85,11 +85,14 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          # The release and its notes already exist (created by release-please);
-          # this only uploads the installers to it and keeps it a draft until published.
+          # Normally the release and its notes already exist (created by release-please) and this
+          # only uploads the installers to it, keeping it a draft until published.
           tagName: ${{ inputs.tag }}
+          # Only used if the release does not exist yet (a manual run); release-please normally
+          # creates it first. The tool refuses to create a release without a name.
+          releaseName: shakespAIre ${{ inputs.tag }}
           releaseDraft: true
           prerelease: false
           # Uploads the signed update files and the latest.json the app checks.
-          includeUpdaterJson: true
+          uploadUpdaterJson: true
           args: ${{ matrix.args }}
