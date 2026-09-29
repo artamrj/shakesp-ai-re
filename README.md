@@ -70,19 +70,11 @@ The trigger shortcut is fully [customizable](#customizing-the-shortcut).
 
 ### The proofread popup
 
-<p align="center">
-  <img src="assets/screenshots/popup-streaming.png" width="360" alt="shakespAIre popup streaming a proofread" />
-</p>
-
-The popup shows a status pill while working (`Connecting` → `Writing` → `Ready`), renders the result as sanitized markdown, and exposes three actions: **Replace**, **Copy**, and **Close**. On a connection error it shows the message and a **Try again** button.
+The popup shows a status pill while working (`Connecting` → `Writing` → `Ready`), shows the result exactly as it will be pasted, and exposes three actions: **Replace**, **Copy**, and **Close**. On a connection error it shows the message and a **Try again** button.
 
 ## Configuration
 
-Open **Settings** (the main window) to configure the AI endpoint.
-
-<p align="center">
-  <img src="assets/screenshots/settings.png" width="420" alt="shakespAIre settings window" />
-</p>
+shakespAIre lives in the menu bar (system tray on Windows/Linux). Choose **Settings…** from its icon to configure the AI endpoint.
 
 ### OpenAI-compatible endpoint
 
@@ -109,14 +101,10 @@ Point shakespAIre at a local server to keep your text on your machine — no API
 
 ### Diagnostics
 
-- **Test API** — saves the config and sends a tiny request to verify the endpoint.
-- **Test popup** — opens the popup in preview mode, bypassing the shortcut, selection capture, and AI call. Useful for checking that popup rendering works on a given device.
+- **Test connection** — sends a tiny request with the values in the form (without saving them) to verify the endpoint.
+- **Preview popup** — opens the popup on a sample sentence and streams a real proofread, bypassing the shortcut and selection capture. Replace is disabled in the preview.
 
 ## Customizing the shortcut
-
-<p align="center">
-  <img src="assets/screenshots/shortcut-recorder.png" width="420" alt="shakespAIre shortcut recorder" />
-</p>
 
 
 1. Open **Settings**.
