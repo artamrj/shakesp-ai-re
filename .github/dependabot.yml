@@ -6,6 +6,8 @@ version: 2
 # (a mismatch makes `tauri dev` refuse to start), and Dependabot cannot update two
 # ecosystems together. So only patch releases of the Tauri family are automated;
 # bump Tauri minors by hand, both sides at once.
+# Major versions of npm and Rust dependencies are never proposed automatically: they are breaking
+# changes (vite, typescript and the svelte plugin all failed CI), so upgrade them by hand.
 updates:
   - package-ecosystem: npm
     directory: /
@@ -20,6 +22,8 @@ updates:
     ignore:
       - dependency-name: "@tauri-apps/*"
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: cargo
     directory: /src-tauri
@@ -36,6 +40,8 @@ updates:
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
       - dependency-name: "tauri-plugin-*"
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /

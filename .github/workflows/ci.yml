@@ -18,11 +18,36 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # Nobody debugs CI builds; skipping debug info makes compiling faster and caches smaller.
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_PROFILE_TEST_DEBUG: 0
 
+# Tauri needs its frontendDist folder to exist when Rust compiles, but the compiled result does not
+# depend on what is inside. An empty `dist/` lets the Rust jobs start immediately and run in
+# parallel with the frontend job instead of waiting for `npm run build`.
 jobs:
-  # Formatting, lints and tests on one fast Linux runner.
-  quality:
-    name: Lint and test (Linux)
+  frontend:
+    name: Frontend (type-check and build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: Type-check
+        run: npm run check
+
+      - name: Build
+        run: npm run build
+
+  rust-lint:
+    name: Rust lint (fmt, clippy)
     runs-on: ubuntu-22.04
     timeout-minutes: 25
     steps:
@@ -33,41 +58,52 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
 
-      - uses: actions/setup-node@v7
-        with:
-          node-version: lts/*
-          cache: npm
-
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
 
+      # Pull requests read the cache that main saved; only main writes it.
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: ./src-tauri -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Install frontend dependencies
-        run: npm ci
+      - run: mkdir -p dist
 
-      - name: Type-check frontend
-        run: npm run check
-
-      # Tauri embeds the built frontend, so Rust needs dist/ to exist.
-      - name: Build frontend
-        run: npm run build
-
-      - name: Check Rust formatting
+      - name: Check formatting
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
 
       - name: Clippy (warnings are errors)
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings
 
-      - name: Rust tests
+  rust-test:
+    name: Rust tests
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - run: mkdir -p dist
+
+      - name: Run tests
         run: cargo test --manifest-path src-tauri/Cargo.toml --locked
 
   # Roughly half the Rust code is platform-specific (input, clipboard, glass), and it cannot be
   # compiled on Linux. A compile-only check on the other two systems catches breakage early
-  # without the cost of building installers.
+  # without the cost of building installers. It also runs after merging so main keeps a warm
+  # cache for pull requests to read.
   cross-os:
     name: Compile check (${{ matrix.name }})
     runs-on: ${{ matrix.platform }}
@@ -83,21 +119,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v7
-        with:
-          node-version: lts/*
-          cache: npm
-
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: ./src-tauri -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Install and build frontend
-        run: |
-          npm ci
-          npm run build
+      - name: Create the empty frontend folder Tauri expects
+        shell: bash
+        run: mkdir -p dist
 
       - name: Compile Rust
         run: cargo check --manifest-path src-tauri/Cargo.toml --all-targets --locked
@@ -133,7 +164,7 @@ jobs:
   ci:
     name: CI
     if: ${{ always() }}
-    needs: [quality, cross-os, pr-title]
+    needs: [frontend, rust-lint, rust-test, cross-os, pr-title]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
