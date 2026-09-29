@@ -174,13 +174,18 @@ fn fallback_key_path(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|error| format!("could not resolve fallback key directory: {error}"))
 }
 
-/// Copies an API key saved under the pre-rename keychain service into the current one.
-/// The old entry is left untouched.
+/// Moves an API key saved under the pre-rename keychain service into the current one.
 fn migrate_legacy_api_key(current: &Entry) -> Option<String> {
     let legacy = Entry::new(LEGACY_KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT).ok()?;
     let api_key = legacy.get_password().ok().filter(|key| !key.trim().is_empty())?;
     match current.set_password(&api_key) {
-        Ok(()) => log::info!("migrated API key from the legacy keychain entry"),
+        Ok(()) => {
+            // Remove the old copy so a key the user later clears cannot be restored from it.
+            if let Err(error) = legacy.delete_credential() {
+                log::warn!("could not remove the legacy API key entry: {error}");
+            }
+            log::info!("migrated API key from the legacy keychain entry");
+        }
         Err(error) => log::warn!("could not copy the legacy API key: {error}"),
     }
     Some(api_key)
@@ -345,7 +350,11 @@ fn persist_ai_config(app: &AppHandle, config: &AiConfig) -> Result<(), String> {
     // app remains usable on Linux without gnome-keyring/kwallet and on Windows
     // configurations where the Credential Manager is locked down.
     save_api_key(app, &config.api_key)?;
+    write_settings_file(app, config)
+}
 
+/// Writes ai-settings.json (never the API key).
+fn write_settings_file(app: &AppHandle, config: &AiConfig) -> Result<(), String> {
     let path = settings_path(app)?;
     let directory = path
         .parent()
@@ -1070,8 +1079,15 @@ pub fn run() {
                 log::warn!("could not create the tray icon: {error}");
                 // Without a tray there would be no way back in; keep the window.
                 show_settings_window(app.handle());
-            } else if first_run {
+            } else if first_run || debug_e2e_enabled() {
                 show_settings_window(app.handle());
+            }
+            if first_run {
+                // Create the settings file now so the window is only auto-opened once.
+                // Defaults only: environment overrides must not be saved permanently.
+                if let Err(error) = write_settings_file(app.handle(), &default_ai_config()) {
+                    log::warn!("could not record first run: {error}");
+                }
             }
 
             // Prewarming the popup window and registering the global shortcut
