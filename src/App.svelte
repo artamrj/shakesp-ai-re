@@ -2,6 +2,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
   import { onMount, tick } from "svelte";
   import { eventModifiers, isSupportedShortcutCode, shortcutParts as formatParts } from "./shortcut";
 
@@ -23,6 +24,8 @@
   let isSavingShortcut = $state(false);
   let recordingParts = $state<string[]>([]);
   let accessibilityOk = $state(true);
+  let launchAtLogin = $state(false);
+  let isTogglingLogin = $state(false);
   const isMac = navigator.userAgent.includes("Mac");
 
   const shortcutParts = (value: string) => formatParts(value, isMac);
@@ -59,6 +62,7 @@
         note("connection", `Could not load settings: ${error}`);
       }
       await refreshAccessibility();
+      launchAtLogin = await isEnabled().catch(() => false);
 
       unlisteners.push(
         await listen<string>("shortcut-error", (event) => {
@@ -118,6 +122,21 @@
     testState = "idle";
     notes.connection = "";
   });
+
+  async function toggleLaunchAtLogin() {
+    if (isTogglingLogin) return;
+    isTogglingLogin = true;
+    note("shortcut");
+    try {
+      if (launchAtLogin) await disable();
+      else await enable();
+      launchAtLogin = await isEnabled();
+    } catch (error) {
+      note("shortcut", `Could not change launch at login: ${error}`);
+    } finally {
+      isTogglingLogin = false;
+    }
+  }
 
   async function previewPopup() {
     try {
@@ -251,6 +270,10 @@
           </button>
         </div>
       {/each}
+      <div class="row">
+        <span>Launch at login</span>
+        <button class="switch" class:on={launchAtLogin} type="button" role="switch" aria-checked={launchAtLogin} aria-label="Launch at login" disabled={isTogglingLogin} onclick={toggleLaunchAtLogin}><i></i></button>
+      </div>
       {#if notes.shortcut}<p class="row note" role="alert">{notes.shortcut}</p>{/if}
       {#if isMac}
         <div class="row">
@@ -290,6 +313,11 @@
   .recorder:hover:not(:disabled) { background: var(--key); }
   .recorder.recording { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
   .recorder em { font-style: normal; font-size: 12px; }
+  .switch { position: relative; flex: none; width: 40px; height: 24px; padding: 0; border: 0; border-radius: 999px; background: var(--key); cursor: pointer; transition: background 0.2s ease; }
+  .switch i { position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); transition: transform 0.2s ease; }
+  .switch.on { background: var(--accent); }
+  .switch.on i { transform: translateX(16px); }
+  .switch:disabled { opacity: 0.6; cursor: default; }
   .badge.ok { color: var(--success); font-weight: 500; }
 
   .footer { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: auto; }
@@ -303,7 +331,7 @@
   .spinner.light { border-color: rgba(255, 255, 255, 0.4); border-top-color: #fff; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .note { margin: 0; padding-block: 8px; color: var(--danger); font-size: 12px; line-height: 16px; user-select: text; display: block; min-height: 0; }
-  @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .spinner, .switch, .switch i { animation: none; transition: none; } }
   .quiet { color: var(--secondary); font-size: 12px; }
 
   .debug-e2e-shell { display: grid; place-items: center; min-height: 100vh; padding: 30px; }
