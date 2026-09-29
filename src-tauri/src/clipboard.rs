@@ -71,6 +71,13 @@ pub fn write_to_clipboard<R: Runtime>(app: &AppHandle<R>, text: &str) -> Result<
 }
 
 pub async fn capture_selected_text<R: Runtime>(app: &AppHandle<R>) -> Result<String, String> {
+    // Linux exposes the highlighted text directly, which is faster and more reliable than
+    // pretending to press Ctrl+C. Fall through to the copy method if that finds nothing.
+    #[cfg(target_os = "linux")]
+    if let Some(selected) = input::primary_selection().await {
+        return Ok(selected);
+    }
+
     save_clipboard(app)?;
 
     let sentinel = format!("shakesp-ai-re-selection-{}", std::process::id());
