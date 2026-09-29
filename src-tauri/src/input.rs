@@ -309,6 +309,54 @@ fn simulate_command_key(_key: &str) -> Result<(), String> {
     Err("copy and paste simulation is not supported on this platform".to_string())
 }
 
+/// Reads the text the user has highlighted straight from the Linux "primary selection".
+///
+/// Linux keeps whatever is highlighted in a selection of its own, so no fake Ctrl+C is needed:
+/// it is instant, works in apps and terminals that treat Ctrl+C differently, and never touches
+/// the user's clipboard. Returns `None` when no helper is installed or nothing is highlighted, so
+/// the caller can fall back to simulating a copy.
+#[cfg(target_os = "linux")]
+pub async fn primary_selection() -> Option<String> {
+    use std::time::Duration;
+
+    use tokio::process::Command;
+
+    const HELPER_TIMEOUT: Duration = Duration::from_millis(400);
+
+    let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some()
+        || std::env::var("XDG_SESSION_TYPE")
+            .is_ok_and(|session| session.eq_ignore_ascii_case("wayland"));
+    let x11 = std::env::var_os("DISPLAY").is_some();
+
+    let mut helpers: Vec<(&str, &[&str])> = Vec::new();
+    if wayland {
+        helpers.push(("wl-paste", &["--primary", "--no-newline"]));
+    }
+    if x11 {
+        helpers.push(("xclip", &["-o", "-selection", "primary"]));
+        helpers.push(("xsel", &["-o", "-p"]));
+    }
+
+    for (program, arguments) in helpers {
+        let run = Command::new(program)
+            .args(arguments)
+            .kill_on_drop(true)
+            .output();
+        let Ok(Ok(output)) = tokio::time::timeout(HELPER_TIMEOUT, run).await else {
+            continue;
+        };
+        if !output.status.success() {
+            continue;
+        }
+        let text = String::from_utf8_lossy(&output.stdout).into_owned();
+        if !text.trim().is_empty() {
+            log::info!("read the selection with {program}");
+            return Some(text);
+        }
+    }
+    None
+}
+
 pub fn simulate_copy() -> Result<(), String> {
     simulate_command_key("c")
 }

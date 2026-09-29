@@ -286,6 +286,13 @@ fn save_api_key(app: &AppHandle, api_key: &str) -> Result<(), String> {
     let temporary_path = path.with_extension("txt.tmp");
     fs::write(&temporary_path, api_key)
         .map_err(|error| format!("could not write fallback API key: {error}"))?;
+    // The key must not be readable by other users on the machine.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&temporary_path, fs::Permissions::from_mode(0o600))
+            .map_err(|error| format!("could not restrict the fallback API key file: {error}"))?;
+    }
     fs::rename(&temporary_path, &path)
         .map_err(|error| format!("could not commit fallback API key: {error}"))?;
 
