@@ -1,0 +1,64 @@
+name: Release
+
+# Every push to main updates the "Release" pull request (version bump + changelog, driven by
+# Conventional Commit messages). Merging that pull request creates the tag and a draft release,
+# builds the installers for all three systems, and publishes the release after one approval.
+on:
+  push:
+    branches: [main]
+
+# Never run two releases at once, and never cancel one halfway.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release-please:
+    name: Prepare release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.rp.outputs.release_created }}
+      tag_name: ${{ steps.rp.outputs.tag_name }}
+    steps:
+      - id: rp
+        uses: googleapis/release-please-action@v4
+        with:
+          # A personal token makes CI run on the release pull request (pull requests opened by
+          # the default token do not trigger workflows). Without it, merge as admin with bypass.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  build:
+    name: Build installers
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.release-please.outputs.tag_name }}
+
+  publish:
+    name: Publish release
+    needs: [release-please, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Protect this environment (Settings > Environments > release > Required reviewers) to get
+    # the one final approval click before the release goes public.
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the draft release
+        run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+        env:
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

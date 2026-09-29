@@ -1,5 +1,6 @@
 version: 2
 
+# Titles use Conventional Commit prefixes so the PR-title check and release-please accept them.
 # Weekly, grouped so a week of updates is one pull request per ecosystem, not a dozen.
 # Tauri's Rust crates and its npm packages must stay on the same minor version
 # (a mismatch makes `tauri dev` refuse to start), and Dependabot cannot update two
@@ -10,6 +11,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    commit-message:
+      prefix: "build(deps)"
     open-pull-requests-limit: 5
     groups:
       npm-minor-and-patch:
@@ -22,6 +25,8 @@ updates:
     directory: /src-tauri
     schedule:
       interval: weekly
+    commit-message:
+      prefix: "build(deps)"
     open-pull-requests-limit: 5
     groups:
       cargo-minor-and-patch:
@@ -36,6 +41,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    commit-message:
+      prefix: "ci"
     groups:
       actions:
         update-types: [minor, patch]

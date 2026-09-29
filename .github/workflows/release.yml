@@ -1,11 +1,20 @@
-name: Release desktop bundles
+name: Build installers
 
+# Builds the installers for a tag and attaches them to its (draft) GitHub release.
+# Called by release-please.yml; can also be run by hand to rebuild an existing tag.
 on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag to build, for example v0.2.0
+        required: true
+        type: string
   workflow_dispatch:
-  push:
-    tags:
-      - "app-v*"
-      - "v*"
+    inputs:
+      tag:
+        description: Release tag to build, for example v0.2.0
+        required: true
+        type: string
 
 jobs:
   build:
@@ -33,6 +42,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
 
       - name: Install Linux build dependencies
         if: matrix.platform == 'ubuntu-22.04'
@@ -65,14 +76,14 @@ jobs:
       - name: Test Rust
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
-      - name: Build draft release
+      - name: Build installers and upload to the draft release
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: app-v__VERSION__
-          releaseName: shakespAIre v__VERSION__
-          releaseBody: Download the installer for your operating system from the assets below.
+          # The release and its notes already exist (created by release-please);
+          # this only uploads the installers to it and keeps it a draft until published.
+          tagName: ${{ inputs.tag }}
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
