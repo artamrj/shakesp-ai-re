@@ -3,6 +3,7 @@ mod clipboard;
 mod glass;
 mod input;
 mod popup;
+mod updater;
 
 use std::{
     fs,
@@ -847,17 +848,34 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         tray::TrayIconBuilder,
     };
 
+    let version = MenuItem::with_id(
+        app,
+        "version",
+        format!("shakespAIre v{}", app.package_info().version),
+        false,
+        None::<&str>,
+    )?;
+    let update = MenuItem::with_id(app, "update", "Check for Updates…", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit shakespAIre", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
-        &[&settings, &PredefinedMenuItem::separator(app)?, &quit],
+        &[
+            &version,
+            &update,
+            &PredefinedMenuItem::separator(app)?,
+            &settings,
+            &PredefinedMenuItem::separator(app)?,
+            &quit,
+        ],
     )?;
+    app.manage(updater::UpdateMenu::new(update));
 
     let mut tray = TrayIconBuilder::with_id("main")
         .tooltip("shakespAIre")
         .menu(&menu)
         .on_menu_event(|app, event| match event.id().as_ref() {
+            "update" => updater::on_click(app.clone()),
             "settings" => show_settings_window(app),
             "quit" => app.exit(0),
             _ => {}
@@ -1037,6 +1055,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .on_window_event(|window, event| {
@@ -1090,6 +1109,7 @@ pub fn run() {
             } else if first_run || debug_e2e_enabled() {
                 show_settings_window(app.handle());
             }
+            updater::start_background_checks(app.handle().clone());
             if first_run {
                 // Create the settings file now so the window is only auto-opened once.
                 // Defaults only: environment overrides must not be saved permanently.

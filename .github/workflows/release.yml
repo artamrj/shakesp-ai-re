@@ -80,10 +80,16 @@ jobs:
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signs the update files. Required because the build produces updater artifacts;
+          # the matching public key is in tauri.conf.json.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           # The release and its notes already exist (created by release-please);
           # this only uploads the installers to it and keeps it a draft until published.
           tagName: ${{ inputs.tag }}
           releaseDraft: true
           prerelease: false
+          # Uploads the signed update files and the latest.json the app checks.
+          includeUpdaterJson: true
           args: ${{ matrix.args }}
