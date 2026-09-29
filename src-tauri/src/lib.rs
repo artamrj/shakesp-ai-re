@@ -30,7 +30,7 @@ static ACTIVE_SHORTCUT: OnceLock<Mutex<String>> = OnceLock::new();
 static REPLACE_SHORTCUT: OnceLock<Mutex<String>> = OnceLock::new();
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 const DEFAULT_MODEL: &str = "gpt-5.6-luna";
-const KEYCHAIN_SERVICE: &str = "com.artamrj.shakespaire";
+const KEYCHAIN_SERVICE: &str = "com.artamrj.shakesp-ai-re";
 const KEYCHAIN_ACCOUNT: &str = "ai-api-key";
 const SETTINGS_FILE: &str = "ai-settings.json";
 const FALLBACK_KEY_FILE: &str = "ai-api-key.txt";
@@ -778,7 +778,7 @@ fn close_popup(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 fn debug_e2e_enabled() -> bool {
-    cfg!(debug_assertions) && std::env::var("SHAKESPAIRE_E2E").as_deref() == Ok("1")
+    cfg!(debug_assertions) && std::env::var("SHAKESP_AI_RE_E2E").as_deref() == Ok("1")
 }
 
 #[tauri::command]
@@ -969,11 +969,11 @@ fn init_logger() {
     // `data_local_dir` is appropriate for log files on all platforms.
     let log_dir = dirs_next::data_local_dir()
         .or_else(dirs_next::config_dir)
-        .map(|d| d.join("shakespaire").join("logs"));
+        .map(|d| d.join("shakesp-ai-re").join("logs"));
 
     if let Some(log_dir) = log_dir {
         let _ = fs::create_dir_all(&log_dir);
-        let log_path = log_dir.join("shakespaire.log");
+        let log_path = log_dir.join("shakesp-ai-re.log");
         match fs::OpenOptions::new()
             .create(true)
             .append(true)

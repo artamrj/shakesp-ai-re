@@ -1,5 +1,5 @@
 {
-  "name": "shakespaire",
+  "name": "shakesp-ai-re",
   "version": "0.1.0",
   "description": "AI for any selected text, anywhere, with one shortcut.",
   "type": "module",
@@ -12,7 +12,7 @@
     "bundle:macos": "tauri build --bundles app,dmg",
     "bundle:windows": "tauri build --bundles nsis,msi",
     "bundle:linux": "tauri build --bundles appimage,deb,rpm",
-    "icons": "tauri icon assets/branding/shakespaire-icon-master.png",
+    "icons": "tauri icon assets/branding/shakesp-ai-re-icon-master.png",
     "tauri": "tauri"
   },
   "license": "MIT",

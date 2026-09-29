@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    shakespaire_lib::run()
+    shakesp_ai_re_lib::run()
 }

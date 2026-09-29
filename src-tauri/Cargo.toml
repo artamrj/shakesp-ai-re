@@ -1,12 +1,12 @@
 [package]
-name = "shakespaire"
+name = "shakesp-ai-re"
 version = "0.1.0"
 description = "AI for any selected text, anywhere, with one shortcut."
 authors = ["Arta"]
 edition = "2021"
 
 [lib]
-name = "shakespaire_lib"
+name = "shakesp_ai_re_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

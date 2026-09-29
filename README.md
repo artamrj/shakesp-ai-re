@@ -1,10 +1,10 @@
 <div align="center">
 
-<img src="assets/branding/shakespaire-icon-master.png" width="120" alt="shakespAIre" />
+<img src="assets/branding/shakesp-ai-re-icon-master.png" width="120" alt="shakespAIre" />
 
 # shakespAIre
 
-**Select. Shortcut. ShakespAIre it.**
+**Select. Shortcut. shakespAIre it.**
 
 Universal AI-powered proofreading for **macOS, Windows, and Linux**.
 
@@ -95,7 +95,7 @@ Point shakespAIre at a local server to keep your text on your machine — no API
 
 ### Where secrets are stored
 
-- **API key** → OS keychain (service `com.artamrj.shakespaire`, account `ai-api-key`). A plaintext file (`ai-api-key.txt`) is used only as a fallback if the keychain is unavailable.
+- **API key** → OS keychain (service `com.artamrj.shakesp-ai-re`, account `ai-api-key`). A plaintext file (`ai-api-key.txt`) is used only as a fallback if the keychain is unavailable.
 - **Settings file** (`ai-settings.json`) stores the base URL, model, and shortcut — **never the API key** (enforced by a unit test).
 - **Dev overrides:** `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `OPENAI_MODEL` environment variables take precedence over the settings file.
 
@@ -120,7 +120,7 @@ Point shakespAIre at a local server to keep your text on your machine — no API
 - **Accessibility permission required.** Selection capture and replacement simulate **⌘C/⌘V** and read selection bounds via the Accessibility API. Grant it under **System Settings → Privacy & Security → Accessibility**.
 - The popup positions itself next to the selected text (when the focused app exposes selection bounds).
 - The window uses the native **Liquid Glass** effect (with a vibrancy fallback), so it is **direct-download only** — not available on the Mac App Store.
-- Stable Developer ID signing with the unchanged bundle id `com.artamrj.shakespaire` reduces repeated Accessibility prompts.
+- Stable Developer ID signing with the unchanged bundle id `com.artamrj.shakesp-ai-re` reduces repeated Accessibility prompts.
 
 </details>
 
@@ -177,7 +177,7 @@ npm run bundle:linux    # AppImage + .deb + .rpm
 Regenerate icons from the master source:
 
 ```bash
-npm run icons        # tauri icon assets/branding/shakespaire-icon-master.png
+npm run icons        # tauri icon assets/branding/shakesp-ai-re-icon-master.png
 ```
 
 ## Releasing

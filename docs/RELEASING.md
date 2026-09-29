@@ -6,7 +6,7 @@ The bundle configuration is split by operating system and merged automatically b
 - Windows: per-user NSIS `.exe` and WiX `.msi`
 - Linux: AppImage, Debian `.deb`, and RPM
 
-The checked-in icon source is `assets/branding/shakespaire-icon-master.png`. Regenerate every
+The checked-in icon source is `assets/branding/shakesp-ai-re-icon-master.png`. Regenerate every
 platform size after changing it with `npm run icons`. Do not manually resize only one output format.
 
 ## Local bundles
@@ -53,7 +53,7 @@ Treat the current build as direct-download software; private API use is not appr
 App Store submission. A Store build needs a separate config/code path that removes those APIs.
 
 Accessibility approval is tied partly to the app identity. Stable Developer ID signing and the
-unchanged bundle identifier `com.artamrj.shakespaire` reduce repeated permission prompts between
+unchanged bundle identifier `com.artamrj.shakesp-ai-re` reduce repeated permission prompts between
 releases; ad-hoc development builds may prompt again.
 
 ### Windows
@@ -80,14 +80,14 @@ allow unsigned updates.
 1. Generate and back up a permanent key outside the repository:
 
    ```bash
-   npm run tauri signer generate -- -w src-tauri/shakespaire.key
+   npm run tauri signer generate -- -w src-tauri/shakesp-ai-re.key
    ```
 
 2. Add the updater plugin with `npm run tauri add updater`.
 3. Set `bundle.createUpdaterArtifacts` to `true`.
 4. Add `plugins.updater.pubkey` containing the public key text—not its path—and configure the
    HTTPS endpoint. For GitHub Releases, the static endpoint can be:
-   `https://github.com/artamrj/ShakespAIre/releases/latest/download/latest.json`.
+   `https://github.com/artamrj/shakesp-ai-re/releases/latest/download/latest.json`.
 5. Add `TAURI_SIGNING_PRIVATE_KEY` and, if used, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` as GitHub
    Actions secrets and expose them only to the release build step.
 6. Add an explicit update check/download/install UI. Do not silently restart while the user is
