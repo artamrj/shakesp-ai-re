@@ -135,7 +135,8 @@ impl PopupWindow {
             .set_size(LogicalSize::new(POPUP_WIDTH, height))
             .map_err(|error| error.to_string())?;
 
-        if let (Ok(Some(monitor)), Ok(position)) = (window.current_monitor(), window.outer_position())
+        if let (Ok(Some(monitor)), Ok(position)) =
+            (window.current_monitor(), window.outer_position())
         {
             let scale = monitor.scale_factor();
             let work_area = monitor.work_area();

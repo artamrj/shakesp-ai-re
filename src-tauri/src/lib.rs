@@ -177,7 +177,10 @@ fn fallback_key_path(app: &AppHandle) -> Result<PathBuf, String> {
 /// Moves an API key saved under the pre-rename keychain service into the current one.
 fn migrate_legacy_api_key(current: &Entry) -> Option<String> {
     let legacy = Entry::new(LEGACY_KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT).ok()?;
-    let api_key = legacy.get_password().ok().filter(|key| !key.trim().is_empty())?;
+    let api_key = legacy
+        .get_password()
+        .ok()
+        .filter(|key| !key.trim().is_empty())?;
     match current.set_password(&api_key) {
         Ok(()) => {
             // Remove the old copy so a key the user later clears cannot be restored from it.
@@ -846,7 +849,10 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
 
     let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit shakespAIre", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&settings, &PredefinedMenuItem::separator(app)?, &quit])?;
+    let menu = Menu::with_items(
+        app,
+        &[&settings, &PredefinedMenuItem::separator(app)?, &quit],
+    )?;
 
     let mut tray = TrayIconBuilder::with_id("main")
         .tooltip("shakespAIre")
@@ -861,7 +867,9 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     {
         // A monochrome template image is tinted by macOS for light/dark menu bars.
         tray = tray
-            .icon(tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?)
+            .icon(tauri::image::Image::from_bytes(include_bytes!(
+                "../icons/tray.png"
+            ))?)
             .icon_as_template(true);
     }
     #[cfg(not(target_os = "macos"))]

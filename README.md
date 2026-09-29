@@ -10,7 +10,7 @@ Universal AI-powered proofreading for **macOS, Windows, and Linux**.
 
 [![Latest release](https://img.shields.io/github/v/release/artamrj/shakesp-ai-re?label=release&color=blue)](https://github.com/artamrj/shakesp-ai-re/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![CI](https://img.shields.io/github/actions/workflow/status/artamrj/shakesp-ai-re/release.yml?label=CI&logo=github)](https://github.com/artamrj/shakesp-ai-re/actions/workflows/release.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/artamrj/shakesp-ai-re/ci.yml?branch=main&label=CI&logo=github)](https://github.com/artamrj/shakesp-ai-re/actions/workflows/ci.yml)
 [![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](#download)
 [![Downloads](https://img.shields.io/github/downloads/artamrj/shakesp-ai-re/total?label=downloads&color=blue)](https://github.com/artamrj/shakesp-ai-re/releases)
 [![Stars](https://img.shields.io/github/stars/artamrj/shakesp-ai-re?style=social)](https://github.com/artamrj/shakesp-ai-re/stargazers)
