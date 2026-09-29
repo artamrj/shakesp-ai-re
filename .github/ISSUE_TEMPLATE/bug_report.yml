@@ -1,0 +1,68 @@
+name: Bug report
+description: Something does not work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! The more detail you give, the faster it gets fixed.
+        **Never paste your API key.** Remove it from any log or screenshot first.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Select text in …
+        2. Press the shortcut …
+        3. …
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [macOS, Windows, Linux]
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version and desktop
+      description: For example "macOS 26.0", "Windows 11 23H2", or "Ubuntu 24.04, GNOME, Wayland". On Linux please include X11 or Wayland.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: shakespAIre version
+      description: Shown at the top of the menu bar icon's menu, for example "v0.2.2".
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install it?
+      options: [".dmg", ".exe / .msi", "AppImage", ".deb", ".rpm", "Built from source"]
+  - type: dropdown
+    id: endpoint
+    attributes:
+      label: AI endpoint
+      options: [OpenAI, "Local model (Ollama, LM Studio, …)", "Other OpenAI-compatible service"]
+  - type: textarea
+    id: log
+    attributes:
+      label: Log output
+      description: The last lines of the log file (see the README section "Where things are stored"). Remove anything private.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I removed my API key and other private text from everything I pasted.
+          required: true

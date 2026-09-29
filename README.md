@@ -23,13 +23,23 @@ Select text in **any** application, press a global shortcut, and a small floatin
 
 ## Contents
 
-[Demo](#demo) · [Features](#features) · [How it works](#how-it-works) · [Download](#download) · [Usage](#usage) · [Configuration](#configuration) · [Updates](#updates) · [Platform notes](#platform-notes) · [Troubleshooting](#troubleshooting) · [Privacy & security](#privacy--security) · [Build from source](#build-from-source) · [Project layout](#project-layout) · [Releasing](#releasing) · [Contributing](#contributing)
+[Demo](#demo) · [Why](#why-shakespaire) · [Features](#features) · [How it works](#how-it-works) · [Download](#download) · [Usage](#usage) · [Configuration](#configuration) · [Updates](#updates) · [Platform notes](#platform-notes) · [Troubleshooting](#troubleshooting) · [Privacy & security](#privacy--security) · [Build from source](#build-from-source) · [Project layout](#project-layout) · [Releasing](#releasing) · [Contributing](#contributing)
 
 ## Demo
 
 <p align="center">
-  <img src="assets/screenshots/Screen Recording 2026-08-26 at 16.47.49 (1).gif" width="640" alt="shakespAIre demo: select text, press the shortcut, stream the proofread, press Enter to replace" />
+  <img src="assets/screenshots/demo.webp" width="640" alt="shakespAIre demo: select text, press the shortcut, stream the proofread, press Enter to replace" />
 </p>
+
+## Why shakespAIre?
+
+| | |
+|---|---|
+| **Any app, one shortcut** | Email, browser, terminal, chat, docs — select, press, done. No plugin per app. |
+| **Your model, your data** | Bring your own OpenAI-compatible key, or run a local model and keep every word on your machine. |
+| **No subscription, no account** | Nothing to sign up for. No telemetry. Open source under MIT. |
+| **Small and native** | Rust and Tauri, not Electron. It sits in the menu bar and stays out of the way. |
+| **Strict by design** | Fixes grammar, spelling, and punctuation and leaves your voice alone. It never rewrites. |
 
 ## Features
 
@@ -276,7 +286,7 @@ The whole pipeline is described in [`.github/README.md`](.github/README.md). Sig
 
 ## Contributing
 
-Pull requests are welcome.
+Pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide, and [SECURITY.md](SECURITY.md) to report a vulnerability privately. In short:
 
 - **Title your pull request** like a Conventional Commit (`fix: …`, `feat: …`, `docs: …`). CI checks it, and the title becomes the commit message that decides the next version.
 - **Do not bump versions by hand.** The release bot does it in every file at once.

@@ -42,6 +42,8 @@ How shakespAIre is tested, versioned, built, and released. Everything here is au
 | [`workflows/release.yml`](workflows/release.yml) | **Build installers**: builds and uploads the installers for one tag. Called by the workflow above, or run by hand. |
 | [`workflows/dependabot-auto-merge.yml`](workflows/dependabot-auto-merge.yml) | Merges safe dependency updates once CI is green. |
 | [`dependabot.yml`](dependabot.yml) | Dependency update schedule and rules. |
+| [`ISSUE_TEMPLATE/`](ISSUE_TEMPLATE) | The bug report and feature request forms shown when someone opens an issue. |
+| [`pull_request_template.md`](pull_request_template.md) | The checklist shown in every new pull request. |
 | [`rulesets/main-protection.json`](rulesets/main-protection.json) | Branch protection for `main`, importable in the GitHub UI. |
 | [`../release-please-config.json`](../release-please-config.json) | How versions and the changelog are produced. |
 | [`../.release-please-manifest.json`](../.release-please-manifest.json) | The last released version (managed by the bot). |
