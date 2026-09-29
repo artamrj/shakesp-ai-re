@@ -17,10 +17,6 @@ const POPUP_GAP: f64 = 8.0;
 const POPUP_EDGE_MARGIN: f64 = 10.0;
 const AUTO_HIDE_DOCK_CLEARANCE: f64 = 88.0;
 
-fn popup_takes_focus() -> bool {
-    cfg!(any(target_os = "windows", target_os = "linux"))
-}
-
 #[derive(Default)]
 struct PopupContext {
     selected_text: String,
@@ -67,7 +63,7 @@ impl PopupWindow {
     pub fn show_test<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
         Self::show_with_mode(
             app,
-            "This is a popup preview. No selected text was captured.",
+            "i has a apple and ther going to the stor tomorow, it be a good day.",
             None,
             true,
             "",
@@ -96,7 +92,7 @@ impl PopupWindow {
         let position = popup_position(app)?;
         let window = if let Some(window) = app.get_webview_window(POPUP_LABEL) {
             window
-                .set_focusable(popup_takes_focus())
+                .set_focusable(true)
                 .map_err(|error| error.to_string())?;
             window
                 .set_resizable(false)
@@ -116,8 +112,13 @@ impl PopupWindow {
         // Native backdrop effects can be dropped while a prewarmed window is hidden.
         // Reapply them after every show so Windows composition is reliable.
         apply_glass(&window)?;
-        if popup_takes_focus() {
-            window.set_focus().map_err(|error| error.to_string())?;
+        // The popup must be the key window on every platform, or its Enter/Copy/Esc
+        // keys never reach the page.
+        window.set_focus().map_err(|error| error.to_string())?;
+        // Focusing the window alone can leave the web view without keyboard focus after the
+        // window was hidden and shown again, so Enter/Copy/Esc would go nowhere.
+        if let Err(error) = AsRef::<tauri::Webview<R>>::as_ref(&window).set_focus() {
+            log::warn!("could not focus the popup web view: {error}");
         }
         let _ = window.emit("popup-reset", ());
         Ok(())
@@ -234,7 +235,7 @@ fn create_window<R: Runtime>(
     .always_on_top(true)
     .skip_taskbar(true)
     .shadow(true)
-    .focusable(popup_takes_focus())
+    .focusable(true)
     .focused(false)
     .visible(visible)
     .build()
@@ -248,7 +249,6 @@ fn create_window<R: Runtime>(
     Ok(window)
 }
 
-#[cfg(any(target_os = "windows", target_os = "linux"))]
 fn install_focus_loss_handler<R: Runtime>(app: &AppHandle<R>, window: &WebviewWindow<R>) {
     let popup_app = app.clone();
     let popup = window.clone();
@@ -270,72 +270,8 @@ fn install_focus_loss_handler<R: Runtime>(app: &AppHandle<R>, window: &WebviewWi
     });
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "linux")))]
-fn install_focus_loss_handler<R: Runtime>(_app: &AppHandle<R>, _window: &WebviewWindow<R>) {}
-
-#[cfg(target_os = "macos")]
 fn apply_glass<R: Runtime>(window: &WebviewWindow<R>) -> Result<(), String> {
-    let effect_window = window.clone();
-    window
-        .with_webview(move |webview| unsafe {
-            use objc2_app_kit::NSView;
-            use window_vibrancy::{
-                LiquidGlassOptions, NSGlassEffectViewStyle, NSVisualEffectMaterial,
-                NSVisualEffectState,
-            };
-
-            let content_view: &NSView = &*webview.inner().cast();
-            let _ = window_vibrancy::clear_liquid_glass(&effect_window);
-            let _ = window_vibrancy::clear_vibrancy(&effect_window);
-
-            let options = LiquidGlassOptions::new(NSGlassEffectViewStyle::Clear)
-                .radius(16.0)
-                .opaque(false)
-                .content_view(content_view);
-
-            if let Err(glass_error) = window_vibrancy::apply_liquid_glass(&effect_window, options) {
-                log::info!(
-                    "native Liquid Glass unavailable ({glass_error}); using vibrancy fallback"
-                );
-                if let Err(vibrancy_error) = window_vibrancy::apply_vibrancy(
-                    &effect_window,
-                    NSVisualEffectMaterial::Popover,
-                    Some(NSVisualEffectState::Active),
-                    Some(16.0),
-                ) {
-                    log::warn!("could not apply popup glass fallback: {vibrancy_error}");
-                }
-            }
-        })
-        .map_err(|error| error.to_string())
-}
-
-#[cfg(target_os = "windows")]
-fn apply_glass<R: Runtime>(window: &WebviewWindow<R>) -> Result<(), String> {
-    use window_vibrancy::{
-        apply_acrylic, apply_blur, apply_mica, clear_acrylic, clear_blur, clear_mica,
-    };
-
-    let _ = clear_mica(window);
-    let _ = clear_acrylic(window);
-    let _ = clear_blur(window);
-    if let Err(acrylic_error) = apply_acrylic(window, Some((244, 246, 250, 176))) {
-        log::info!("Windows Acrylic unavailable ({acrylic_error}); using Mica fallback");
-        if let Err(mica_error) = apply_mica(window, Some(false)) {
-            log::info!("Windows Mica unavailable ({mica_error}); using blur fallback");
-            if let Err(blur_error) = apply_blur(window, Some((244, 246, 250, 150))) {
-                log::warn!(
-                    "Windows native blur unavailable ({blur_error}); using translucent CSS fallback"
-                );
-            }
-        }
-    }
-    Ok(())
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
-fn apply_glass<R: Runtime>(_window: &WebviewWindow<R>) -> Result<(), String> {
-    Ok(())
+    crate::glass::apply(window, 16.0)
 }
 
 fn popup_position<R: Runtime>(app: &AppHandle<R>) -> Result<PhysicalPosition<i32>, String> {

@@ -1,5 +1,6 @@
 mod ai;
 mod clipboard;
+mod glass;
 mod input;
 mod popup;
 
@@ -26,6 +27,7 @@ use tokio_stream::StreamExt;
 
 static AI_CONFIG: OnceLock<Mutex<AiConfig>> = OnceLock::new();
 static ACTIVE_SHORTCUT: OnceLock<Mutex<String>> = OnceLock::new();
+static REPLACE_SHORTCUT: OnceLock<Mutex<String>> = OnceLock::new();
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 const DEFAULT_MODEL: &str = "gpt-5.6-luna";
 const KEYCHAIN_SERVICE: &str = "com.artamrj.shakespaire";
@@ -81,6 +83,40 @@ struct PersistedAiConfig {
     model: String,
     #[serde(default = "default_shortcut")]
     shortcut: String,
+    #[serde(default = "default_replace_shortcut")]
+    replace_shortcut: String,
+}
+
+fn default_replace_shortcut() -> String {
+    "Enter".to_string()
+}
+
+fn replace_shortcut() -> &'static Mutex<String> {
+    REPLACE_SHORTCUT.get_or_init(|| Mutex::new(default_replace_shortcut()))
+}
+
+/// The replace key is handled inside the popup, so it only needs to be a sane
+/// "Modifier+Code" string that cannot collide with the popup's fixed keys.
+fn validate_replace_shortcut(value: &str) -> Result<(), String> {
+    let parts: Vec<&str> = value.split('+').collect();
+    let key = parts.last().copied().unwrap_or_default();
+    let modifiers = &parts[..parts.len().saturating_sub(1)];
+    let well_formed = !key.is_empty()
+        && value.len() <= 40
+        && value.chars().all(|c| c.is_ascii_alphanumeric() || c == '+')
+        && modifiers
+            .iter()
+            .all(|m| matches!(*m, "Control" | "Alt" | "Shift" | "Super"));
+    if !well_formed {
+        return Err("That key combination is not valid.".to_string());
+    }
+    if key == "Escape" {
+        return Err("Escape closes the popup, so it can't be the replace key.".to_string());
+    }
+    if key == "KeyC" && modifiers.iter().any(|m| matches!(*m, "Control" | "Super")) {
+        return Err("That combination is used for Copy. Choose another.".to_string());
+    }
+    Ok(())
 }
 
 fn default_shortcut() -> String {
@@ -246,6 +282,11 @@ fn load_ai_config(app: &AppHandle) -> Result<(), String> {
                 if !saved.model.trim().is_empty() {
                     config.model = saved.model;
                 }
+                if validate_replace_shortcut(&saved.replace_shortcut).is_ok() {
+                    *replace_shortcut()
+                        .lock()
+                        .map_err(|error| error.to_string())? = saved.replace_shortcut;
+                }
                 match parse_shortcut(&saved.shortcut) {
                     Ok(shortcut) => {
                         *active_shortcut()
@@ -301,6 +342,10 @@ fn persist_ai_config(app: &AppHandle, config: &AiConfig) -> Result<(), String> {
             .lock()
             .map_err(|error| error.to_string())?
             .clone(),
+        replace_shortcut: replace_shortcut()
+            .lock()
+            .map_err(|error| error.to_string())?
+            .clone(),
     };
     let contents = serde_json::to_vec_pretty(&persisted)
         .map_err(|error| format!("could not encode settings: {error}"))?;
@@ -322,6 +367,7 @@ mod persistence_tests {
             base_url: "https://example.com/v1".to_string(),
             model: "example-model".to_string(),
             shortcut: "Control+Shift+Space".to_string(),
+            replace_shortcut: "Enter".to_string(),
         };
         let json = serde_json::to_string(&settings).expect("settings should serialize");
 
@@ -336,6 +382,16 @@ mod persistence_tests {
         .expect("old settings should remain compatible");
 
         assert_eq!(settings.shortcut, default_shortcut());
+    }
+
+    #[test]
+    fn replace_shortcut_rejects_reserved_and_malformed_keys() {
+        assert!(super::validate_replace_shortcut("Enter").is_ok());
+        assert!(super::validate_replace_shortcut("Shift+Enter").is_ok());
+        assert!(super::validate_replace_shortcut("Escape").is_err());
+        assert!(super::validate_replace_shortcut("Super+KeyC").is_err());
+        assert!(super::validate_replace_shortcut("Bogus+Enter").is_err());
+        assert!(super::validate_replace_shortcut("").is_err());
     }
 
     #[test]
@@ -368,6 +424,37 @@ fn get_ai_config() -> Result<AiConfig, String> {
         .lock()
         .map(|config| config.clone())
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn get_replace_shortcut() -> Result<String, String> {
+    replace_shortcut()
+        .lock()
+        .map(|value| value.clone())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn set_replace_shortcut(app: AppHandle, shortcut: String) -> Result<String, String> {
+    validate_replace_shortcut(&shortcut)?;
+    let previous = replace_shortcut()
+        .lock()
+        .map_err(|error| error.to_string())?
+        .clone();
+    *replace_shortcut()
+        .lock()
+        .map_err(|error| error.to_string())? = shortcut.clone();
+    let config = ai_config()
+        .lock()
+        .map_err(|error| error.to_string())?
+        .clone();
+    if let Err(error) = persist_ai_config(&app, &config) {
+        *replace_shortcut()
+            .lock()
+            .map_err(|lock_error| lock_error.to_string())? = previous;
+        return Err(format!("Could not save the replace key: {error}"));
+    }
+    Ok(shortcut)
 }
 
 #[tauri::command]
@@ -609,6 +696,56 @@ fn surface_stream_error(
     Err(error)
 }
 
+/// Checks the endpoint values from the form without saving them, and without
+/// touching the popup or its stream state.
+#[tauri::command]
+async fn test_ai_connection(mut config: AiConfig) -> Result<(), String> {
+    config.base_url = config.base_url.trim().to_string();
+    config.model = config.model.trim().to_string();
+    let check = async {
+        let mut stream = stream_chat(&config, "Reply with the single word: ready", "ping")
+            .await
+            .map_err(|error| error.to_string())?;
+        while let Some(chunk) = stream.next().await {
+            if !chunk.map_err(|error| error.to_string())?.is_empty() {
+                return Ok(());
+            }
+        }
+        Err("The AI service connected but returned no text.".to_string())
+    };
+    tokio::time::timeout(Duration::from_secs(45), check)
+        .await
+        .map_err(|_| "The AI service took too long to answer.".to_string())?
+}
+
+#[tauri::command]
+fn accessibility_trusted() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        input::accessibility_trusted()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        true
+    }
+}
+
+#[tauri::command]
+fn open_accessibility_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+            .spawn()
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(())
+    }
+}
+
 #[tauri::command]
 fn show_popup(app: AppHandle, selected_text: String) -> Result<(), String> {
     let source_application = input::frontmost_application().ok();
@@ -627,7 +764,16 @@ fn resize_popup(app: AppHandle, height: f64) -> Result<(), String> {
 
 #[tauri::command]
 fn close_popup(app: AppHandle) -> Result<(), String> {
-    PopupWindow::close(&app)
+    PopupWindow::close(&app)?;
+    // The popup took keyboard focus, so hand it back to the app the text came from.
+    // (Click-away and Replace do their own focus handling.)
+    #[cfg(target_os = "macos")]
+    if let Ok(Some(source_application)) = PopupWindow::source_application() {
+        std::thread::spawn(move || {
+            let _ = input::activate_application(&source_application);
+        });
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -868,6 +1014,8 @@ pub fn run() {
             set_ai_config,
             get_ai_config,
             get_shortcut,
+            get_replace_shortcut,
+            set_replace_shortcut,
             set_shortcut,
             capture_selected_text,
             get_popup_selection,
@@ -875,6 +1023,9 @@ pub fn run() {
             get_popup_error,
             replace_text,
             stream_ai_text,
+            test_ai_connection,
+            accessibility_trusted,
+            open_accessibility_settings,
             show_popup,
             test_popup,
             resize_popup,

@@ -3,6 +3,7 @@
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import { writeText } from "@tauri-apps/plugin-clipboard-manager";
   import { onMount, tick } from "svelte";
+  import { eventShortcut, shortcutParts } from "./shortcut";
 
   let selectedText = $state("");
   let outputText = $state("");
@@ -19,8 +20,9 @@
   let pendingOutput = "";
   let requestGeneration = 0;
   let requestedHeight = 0;
+  let replaceShortcut = $state("Enter");
+  const isMac = navigator.userAgent.includes("Mac");
   let resultElement: HTMLElement;
-  const platform = new URLSearchParams(window.location.search).get("platform") ?? "unknown";
 
   interface StreamRetryEvent {
     attempt: number;
@@ -63,7 +65,10 @@
             error: popupError,
           }).catch(() => {});
         }),
-        await listen("popup-reset", scheduleProofread),
+        await listen("popup-reset", () => {
+          window.focus();
+          scheduleProofread();
+        }),
       );
 
       window.addEventListener("keydown", handleKeydown);
@@ -125,6 +130,8 @@
 
   async function startProofread() {
     const generation = ++requestGeneration;
+    // Pick up a changed replace key without restarting the app.
+    void invoke<string>("get_replace_shortcut").then((value) => (replaceShortcut = value)).catch(() => {});
     requestedHeight = 0;
     selectedText = "";
     outputText = "";
@@ -155,11 +162,6 @@
       if (!capturedText.trim()) return;
       selectedText = capturedText;
       isTestPopup = testMode;
-      if (testMode) {
-        outputText = "Popup display is working on this device. The shortcut and text-capture steps were intentionally skipped.";
-        streamStatus = "Preview";
-        return;
-      }
       isStreaming = true;
       await invoke("stream_ai_text", { selectedText });
     } catch (error) {
@@ -171,7 +173,7 @@
   }
 
   async function applyReplacement() {
-    if (isStreaming || isApplying || popupError || !outputText.trim()) return;
+    if (isTestPopup || isStreaming || isApplying || popupError || !outputText.trim()) return;
     isApplying = true;
     popupError = "";
     try {
@@ -212,7 +214,7 @@
     if (event.key === "Escape") {
       event.preventDefault();
       void closePopup();
-    } else if (event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
+    } else if (!event.isComposing && eventShortcut(event) === replaceShortcut) {
       event.preventDefault();
       void applyReplacement();
     } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "c") {
@@ -222,10 +224,10 @@
   }
 </script>
 
-<main class="popup-shell" class:platform-windows={platform === "windows"} class:platform-linux={platform === "linux"}>
+<main class="popup-shell">
   <header class="popup-header">
     <div class="popup-title">
-      <strong>{isTestPopup ? "Popup test" : "Proofread"}</strong>
+      <strong>Proofread</strong>
     </div>
     {#if isStreaming}
       <span class="stream-status"><i></i>{streamStatus}</span>
@@ -235,14 +237,14 @@
         Ready
       </span>
     {/if}
-    <button class="icon-button" aria-label="Close" title="Close" onclick={closePopup}>
+    <button class="icon-button" aria-label="Close" title="Close" tabindex="-1" onclick={closePopup}>
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8" /></svg>
     </button>
   </header>
 
   <section bind:this={resultElement} class="result" class:loading={isStreaming} aria-live="polite" aria-busy={isStreaming}>
     {#if outputText}
-      <div class="markdown" dir="auto">{outputText}{#if isStreaming}<span class="stream-cursor" aria-hidden="true"></span>{/if}</div>
+      <div class="text" dir="auto">{outputText}{#if isStreaming}<span class="stream-cursor" aria-hidden="true"></span>{/if}</div>
     {:else if !popupError}
       <div class="skeleton" aria-label="Preparing your proofread result"><i></i><i></i><i></i></div>
     {/if}
@@ -254,18 +256,18 @@
         <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8" /><path d="M10 6v5m0 3h.01" /></svg>
         <div>
           <p>{popupError}</p>
-          <button onclick={startProofread}>Try again</button>
+          <button class="btn btn-sm btn-secondary" onclick={startProofread}>Try again</button>
         </div>
       </div>
     {/if}
   </section>
 
   <footer class="popup-actions">
-    <button class="primary" onclick={applyReplacement} disabled={isTestPopup || isStreaming || isApplying || !!popupError || !outputText.trim()} title={isTestPopup ? "Replacement is disabled in test mode" : "Replace selected text"}>
+    <button class="btn btn-sm btn-primary" onclick={applyReplacement} disabled={isTestPopup || isStreaming || isApplying || !!popupError || !outputText.trim()} title={isTestPopup ? "Preview only. Nothing is replaced." : `Replace selected text (${shortcutParts(replaceShortcut, isMac).join(" ")})`}>
       {#if isApplying}<span class="button-spinner"></span>{/if}
-      {isTestPopup ? "Preview" : isApplying ? "Replacing" : "Replace"}
+      {isApplying ? "Replacing" : "Replace"}
     </button>
-    <button class="secondary" onclick={copyResult} disabled={!outputText.trim()} title="Copy result">
+    <button class="btn btn-sm btn-secondary" onclick={copyResult} disabled={!outputText.trim()} title="Copy result">
       {#if copyState === "copied"}
         <svg viewBox="0 0 14 14" aria-hidden="true"><path d="m2.5 7 2.7 2.7 6-6" /></svg>
       {:else}
@@ -277,49 +279,43 @@
 </main>
 
 <style>
-  :global(:root), :global(html), :global(body), :global(#app) { background: transparent; }
-  :global(*) { box-sizing: border-box; }
-  :global(button) { font: inherit; }
-  .popup-shell { position: relative; display: flex; flex-direction: column; height: 100vh; overflow: hidden; border: 1px solid rgba(255,255,255,.30); border-radius: 16px; background: linear-gradient(135deg, rgba(255,255,255,.13), rgba(238,242,250,.07)); box-shadow: inset 0 1px 0 rgba(255,255,255,.32); backdrop-filter: blur(28px) saturate(1.35); -webkit-backdrop-filter: blur(28px) saturate(1.35); font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; font-synthesis: none; font-weight: 300; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
-  .popup-shell.platform-windows { font-family: "Segoe UI Variable Text", "Segoe UI", -apple-system, sans-serif; }
-  .popup-shell.platform-linux { font-family: Inter, "Noto Sans", Ubuntu, Cantarell, sans-serif; background: linear-gradient(135deg, rgba(248, 249, 252, 0.92), rgba(238, 242, 250, 0.88)); backdrop-filter: none; -webkit-backdrop-filter: none; }
-  .popup-header { position: relative; z-index: 1; display: flex; align-items: center; flex: 0 0 auto; height: 36px; padding: 0 9px 0 14px; border-bottom: 1px solid rgba(87,94,108,.09); user-select: none; }
-  .popup-title { display: flex; align-items: center; color: rgba(28,29,33,.80); font-size: 12px; font-weight: 400; }
-  .popup-title strong { font-weight: 400; }
-  .icon-button { display: grid; place-items: center; width: 22px; height: 22px; margin-left: 6px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: rgba(55,59,66,.48); cursor: pointer; }
-  .icon-button svg { width: 12px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.4; }
-  .icon-button:hover { background: rgba(60,64,72,.08); color: rgba(35,38,44,.72); }
-  .result { position: relative; z-index: 1; flex: 1 1 auto; min-height: 0; padding: 11px 15px 10px; overflow-y: auto; scrollbar-color: rgba(95,103,120,.16) transparent; scrollbar-width: thin; }
-  .markdown { color: rgba(38,40,46,.78); font-size: 12px; font-variation-settings: "wght" 300; font-weight: 300; letter-spacing: .005em; line-height: 1.52; overflow-wrap: anywhere; white-space: pre-wrap; unicode-bidi: plaintext; text-align: start; }
-  .stream-status { display: flex; align-items: center; gap: 6px; margin-left: auto; color: #7d828c; font-size: 9px; font-weight: 300; }
-  .stream-status i { width: 6px; height: 6px; border-radius: 50%; background: #7060df; box-shadow: 0 0 0 3px rgba(112,96,223,.10); animation: pulse 1s infinite alternate; }
-  .done-status { display: flex; align-items: center; gap: 3px; margin-left: auto; color: rgba(59,112,76,.72); font-size: 9px; font-weight: 400; }
-  .done-status svg { width: 10px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5; }
-  .markdown :global(.stream-cursor) { display: inline-block; width: 1.5px; height: .95em; margin-inline-start: 2px; border-radius: 2px; background: #6857d9; vertical-align: -.1em; animation: blink .72s steps(1) infinite; }
+  .popup-shell { position: relative; display: flex; flex-direction: column; height: 100vh; overflow: hidden; border: 1px solid var(--panel-edge); border-radius: 16px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32); }
+  :global(html[data-platform="linux"]) .popup-shell { background: var(--bg-solid); }
+
+  .popup-header { display: flex; align-items: center; flex: none; height: 38px; padding: 0 10px 0 14px; border-bottom: 1px solid var(--separator); user-select: none; }
+  .popup-title { color: var(--secondary); font-size: 12px; font-weight: 600; }
+  .icon-button { display: grid; place-items: center; width: 22px; height: 22px; margin-left: 6px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--secondary); cursor: pointer; }
+  .icon-button svg { width: 12px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.5; }
+  .icon-button:focus-visible { outline: none; }
+  .icon-button:hover { background: var(--key); color: var(--label); }
+
+  .stream-status, .done-status { display: flex; align-items: center; gap: 6px; margin-left: auto; font-size: 11px; }
+  .stream-status { color: var(--secondary); }
+  .stream-status i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); animation: pulse 1s infinite alternate; }
+  .done-status { gap: 4px; color: var(--success); font-weight: 500; }
+  .done-status svg { width: 10px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.6; }
+
+  .result { flex: 1 1 auto; min-height: 0; padding: 12px 14px; overflow-y: auto; scrollbar-color: color-mix(in srgb, var(--label) 20%, transparent) transparent; scrollbar-width: thin; }
+  .text { color: var(--label); line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; unicode-bidi: plaintext; text-align: start; }
+  .text :global(.stream-cursor) { display: inline-block; width: 2px; height: 1em; margin-inline-start: 2px; border-radius: 2px; background: var(--accent); vertical-align: -0.15em; animation: blink 0.72s steps(1) infinite; }
+
   .skeleton { display: grid; gap: 12px; padding-top: 3px; }
-  .skeleton i { display: block; height: 10px; border-radius: 999px; background: linear-gradient(90deg, rgba(119,127,143,.13) 20%, rgba(119,127,143,.23) 40%, rgba(119,127,143,.13) 60%); background-size: 300% 100%; animation: shimmer 1.35s ease infinite; }
+  .skeleton i { display: block; height: 10px; border-radius: 999px; background: linear-gradient(90deg, var(--key) 20%, color-mix(in srgb, var(--label) 16%, transparent) 40%, var(--key) 60%); background-size: 300% 100%; animation: shimmer 1.35s ease infinite; }
   .skeleton i:nth-child(2) { width: 92%; }
   .skeleton i:nth-child(3) { width: 54%; }
-  .retry-note { margin: 9px 0 0; color: rgba(68,72,82,.58); font-size: 9.5px; font-weight: 300; line-height: 1.35; }
-  .error { display: flex; align-items: flex-start; gap: 10px; padding: 12px 13px; border: 1px solid rgba(189,74,64,.13); border-radius: 11px; background: rgba(244,92,81,.08); color: #a43d35; }
-  .error svg { flex: 0 0 auto; width: 18px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.6; }
+  .retry-note { margin: 9px 0 0; color: var(--secondary); font-size: 11px; line-height: 1.35; }
+
+  .error { display: flex; align-items: flex-start; gap: 10px; margin-top: 8px; padding: 12px; border-radius: 12px; background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); }
+  .error svg { flex: none; width: 18px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.6; }
   .error > div { min-width: 0; }
-  .error p { margin: 0; font-size: 12px; font-weight: 300; line-height: 1.45; }
-  .error button { margin: 8px 0 0; padding: 4px 8px; border: 0; border-radius: 7px; background: rgba(164,61,53,.11); color: inherit; font-size: 9px; font-weight: 400; cursor: pointer; }
-  .error button:hover { background: rgba(164,61,53,.17); }
-  .popup-actions { position: relative; z-index: 1; display: flex; align-items: center; gap: 6px; flex: 0 0 auto; min-height: 40px; padding: 6px 10px 8px; border-top: 1px solid rgba(87,94,108,.09); }
-  .popup-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: 52px; padding: 5px 9px; border: 0; border-radius: 8px; font-size: 9px; font-weight: 400; box-shadow: inset 0 1px 0 rgba(255,255,255,.22); cursor: pointer; transition: transform .15s ease, background .15s ease; }
-  .popup-actions button > svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.25; }
-  .popup-actions button:disabled { opacity: .48; cursor: default; }
-  .popup-actions button:active:not(:disabled) { transform: translateY(1px); }
-  .popup-actions .primary { background: rgba(42,44,51,.84); color: rgba(255,255,255,.94); }
-  .popup-actions .primary:hover:not(:disabled) { background: rgba(36,39,46,.92); }
-  .popup-actions .secondary { background: rgba(90,96,108,.10); color: rgba(35,38,44,.74); }
-  .popup-actions .secondary:hover:not(:disabled) { background: rgba(90,96,108,.14); }
-  .button-spinner { display: inline-block; width: 10px; height: 10px; margin-right: 5px; border: 1.5px solid rgba(255,255,255,.4); border-top-color: white; border-radius: 50%; animation: spin .7s linear infinite; }
-  @keyframes pulse { to { opacity: .35; transform: scale(.8); } }
+  .error p { margin: 0 0 8px; line-height: 1.45; }
+
+  .popup-actions { display: flex; align-items: center; gap: 8px; flex: none; padding: 8px 12px 10px; border-top: 1px solid var(--separator); }
+  .popup-actions .btn > svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.4; }
+  .button-spinner { display: inline-block; width: 10px; height: 10px; border: 1.5px solid rgba(255, 255, 255, 0.4); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; }
+  @keyframes pulse { to { opacity: 0.35; transform: scale(0.8); } }
   @keyframes blink { 50% { opacity: 0; } }
   @keyframes shimmer { to { background-position: -150% 0; } }
   @keyframes spin { to { transform: rotate(360deg); } }
-  @media (prefers-reduced-motion: reduce) { .stream-status i, .markdown :global(.stream-cursor), .skeleton i, .button-spinner { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .stream-status i, .text :global(.stream-cursor), .skeleton i, .button-spinner { animation: none; } }
 </style>
