@@ -23,14 +23,37 @@ Windows MSI uses WiX and must be built on Windows. Linux should be built on the 
 Linux baseline; the release workflow uses Ubuntu 22.04 to avoid unnecessarily raising the glibc
 requirement. The GitHub workflow builds Apple Silicon macOS and x64 Windows/Linux bundles.
 
-Before tagging a release, keep these versions identical:
+## How a release happens
 
-- `src-tauri/tauri.conf.json > version`
-- `src-tauri/Cargo.toml > package.version`
-- `package.json > version`
+Releases are automatic; you never edit a version or create a tag by hand.
 
-Push a tag such as `app-v0.2.0` or `v0.2.0` to create a draft GitHub release. The application
-version comes from the version files above, not from the pushed tag text.
+1. Merge pull requests into `main` with [Conventional Commit](https://www.conventionalcommits.org)
+   titles (`feat: …`, `fix: …`, `perf: …`). The pull-request title check enforces this, and the
+   squash-merged title becomes the commit message.
+2. On every push to `main`, the `Release` workflow (release-please) opens or updates a
+   **Release pull request**. It bumps the version in `package.json`, `package-lock.json`,
+   `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock` and `src-tauri/tauri.conf.json`, and writes
+   `CHANGELOG.md`. While the version is below 1.0, `feat` bumps the minor and `fix` the patch.
+   `docs`, `ci`, `chore`, `refactor`, `build`, `test` and `style` commits do not trigger a release.
+3. Merge that pull request when you want to ship. The workflow then creates the `vX.Y.Z` tag and a
+   draft GitHub release with the changelog as its notes, builds the macOS, Windows and Linux
+   installers (`release.yml`) and attaches them to the draft.
+4. The last job, `Publish release`, runs in the `release` environment. If you add yourself as a
+   required reviewer there, it waits for one approval click before the draft becomes public.
+
+To rebuild the installers for an existing tag, run the `Build installers` workflow manually and
+enter the tag.
+
+### One-time repository setup
+
+- **Environment:** Settings > Environments > New environment `release`, then add yourself under
+  *Required reviewers* (this is the final approval gate).
+- **Token (recommended):** create a fine-grained personal access token limited to this repository
+  with *Contents* and *Pull requests* read/write, and save it as the secret `RELEASE_PLEASE_TOKEN`.
+  Pull requests opened with the default token do not trigger CI, so without it the Release pull
+  request has no `CI` check; you would have to merge it as an admin using the ruleset bypass.
+- **Workflow permissions:** Settings > Actions > General > *Allow GitHub Actions to create and
+  approve pull requests* must be enabled.
 
 ## Platform signing
 
@@ -72,26 +95,36 @@ packages should instead be signed through the repository metadata and package-pu
 Linux text replacement still needs `wtype` on Wayland or `xdotool` on X11. These are intentionally
 not hard dependencies because users need only one of them and package names differ by distribution.
 
-## Enabling secure auto-update
+## Automatic updates
 
-Updater output is intentionally disabled until a permanent signing key exists. Tauri does not
-allow unsigned updates.
+The app updates itself from the menu bar icon. One item there shows the state and is the only
+control: **Check for Updates…** → **Install Update vX.Y.Z…** → **Downloading Update… 42%** →
+**Restarting…**. It checks quietly once a day in release builds, downloads and installs only after
+the user clicks, and waits for an open popup or a running replace to finish before it restarts.
 
-1. Generate and back up a permanent key outside the repository:
+How it works: each release contains signed update files and a `latest.json`. The app reads
+`https://github.com/artamrj/shakesp-ai-re/releases/latest/download/latest.json`, which only exists
+once the release is published (drafts are invisible to users), and refuses any update that is not
+signed by the private key matching the public key in `src-tauri/tauri.conf.json`.
 
-   ```bash
-   npm run tauri signer generate -- -w src-tauri/shakesp-ai-re.key
-   ```
+### The signing key
 
-2. Add the updater plugin with `npm run tauri add updater`.
-3. Set `bundle.createUpdaterArtifacts` to `true`.
-4. Add `plugins.updater.pubkey` containing the public key text—not its path—and configure the
-   HTTPS endpoint. For GitHub Releases, the static endpoint can be:
-   `https://github.com/artamrj/shakesp-ai-re/releases/latest/download/latest.json`.
-5. Add `TAURI_SIGNING_PRIVATE_KEY` and, if used, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` as GitHub
-   Actions secrets and expose them only to the release build step.
-6. Add an explicit update check/download/install UI. Do not silently restart while the user is
-   proofreading or replacing text.
+- The key pair is `~/.tauri/shakesp-ai-re.key` (private) and `.key.pub` (public). It was generated
+  with an empty password and lives outside the repository. **Back it up somewhere encrypted:** if it
+  is lost, no existing installation will ever accept another update.
+- Add the private key as the GitHub Actions secret `TAURI_SIGNING_PRIVATE_KEY` (copy it with
+  `pbcopy < ~/.tauri/shakesp-ai-re.key`). If you ever give the key a password, also add
+  `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Without the secret the release build fails on purpose.
+- Local bundles (`npm run bundle:macos` and friends) also produce update files, so they need
+  `TAURI_SIGNING_PRIVATE_KEY_PATH=~/.tauri/shakesp-ai-re.key` in the environment.
 
-Losing the updater private key prevents publishing trusted updates to existing installations.
-Rotating it requires a migration release signed by the old key, so keep an encrypted offline backup.
+### Known limits
+
+- **Accessibility permission (macOS):** builds are signed ad-hoc, so every version has a different
+  identity and macOS resets the Accessibility permission after each update. Users must allow it
+  again, and until they do the shortcut cannot capture text. A stable `Developer ID Application`
+  signature (see above) removes this.
+- **Existing 0.1.x installs have no updater** and must be updated by hand once.
+- **Linux:** only the AppImage updates itself; `.deb` and `.rpm` installs are updated by the user.
+- Do not bump the Tauri minor version by hand on one side only, and keep the updater plugin, `tauri`
+  and the CLI on the same minor.

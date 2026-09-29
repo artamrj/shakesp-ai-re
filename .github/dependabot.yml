@@ -1,0 +1,48 @@
+version: 2
+
+# Titles use Conventional Commit prefixes so the PR-title check and release-please accept them.
+# Monthly, grouped so a month of updates is one pull request per ecosystem, not a dozen.
+# Tauri's Rust crates and its npm packages must stay on the same minor version
+# (a mismatch makes `tauri dev` refuse to start), and Dependabot cannot update two
+# ecosystems together. So only patch releases of the Tauri family are automated;
+# bump Tauri minors by hand, both sides at once.
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "build(deps)"
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: "@tauri-apps/*"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "build(deps)"
+    open-pull-requests-limit: 5
+    groups:
+      cargo-minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: "tauri"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      - dependency-name: "tauri-plugin-*"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        update-types: [minor, patch]

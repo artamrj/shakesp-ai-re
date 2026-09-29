@@ -3,6 +3,7 @@ mod clipboard;
 mod glass;
 mod input;
 mod popup;
+mod updater;
 
 use std::{
     fs,
@@ -177,7 +178,10 @@ fn fallback_key_path(app: &AppHandle) -> Result<PathBuf, String> {
 /// Moves an API key saved under the pre-rename keychain service into the current one.
 fn migrate_legacy_api_key(current: &Entry) -> Option<String> {
     let legacy = Entry::new(LEGACY_KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT).ok()?;
-    let api_key = legacy.get_password().ok().filter(|key| !key.trim().is_empty())?;
+    let api_key = legacy
+        .get_password()
+        .ok()
+        .filter(|key| !key.trim().is_empty())?;
     match current.set_password(&api_key) {
         Ok(()) => {
             // Remove the old copy so a key the user later clears cannot be restored from it.
@@ -844,14 +848,34 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         tray::TrayIconBuilder,
     };
 
+    let version = MenuItem::with_id(
+        app,
+        "version",
+        format!("shakespAIre v{}", app.package_info().version),
+        false,
+        None::<&str>,
+    )?;
+    let update = MenuItem::with_id(app, "update", "Check for Updates…", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit shakespAIre", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&settings, &PredefinedMenuItem::separator(app)?, &quit])?;
+    let menu = Menu::with_items(
+        app,
+        &[
+            &version,
+            &update,
+            &PredefinedMenuItem::separator(app)?,
+            &settings,
+            &PredefinedMenuItem::separator(app)?,
+            &quit,
+        ],
+    )?;
+    app.manage(updater::UpdateMenu::new(update));
 
     let mut tray = TrayIconBuilder::with_id("main")
         .tooltip("shakespAIre")
         .menu(&menu)
         .on_menu_event(|app, event| match event.id().as_ref() {
+            "update" => updater::on_click(app.clone()),
             "settings" => show_settings_window(app),
             "quit" => app.exit(0),
             _ => {}
@@ -861,7 +885,9 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     {
         // A monochrome template image is tinted by macOS for light/dark menu bars.
         tray = tray
-            .icon(tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?)
+            .icon(tauri::image::Image::from_bytes(include_bytes!(
+                "../icons/tray.png"
+            ))?)
             .icon_as_template(true);
     }
     #[cfg(not(target_os = "macos"))]
@@ -1029,6 +1055,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .on_window_event(|window, event| {
@@ -1082,6 +1109,7 @@ pub fn run() {
             } else if first_run || debug_e2e_enabled() {
                 show_settings_window(app.handle());
             }
+            updater::start_background_checks(app.handle().clone());
             if first_run {
                 // Create the settings file now so the window is only auto-opened once.
                 // Defaults only: environment overrides must not be saved permanently.
