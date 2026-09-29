@@ -1,6 +1,6 @@
 {
   "name": "shakesp-ai-re",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "AI for any selected text, anywhere, with one shortcut.",
   "type": "module",
   "scripts": {
