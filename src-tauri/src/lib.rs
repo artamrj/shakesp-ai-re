@@ -655,6 +655,51 @@ fn debug_e2e_report(selected_text: String, output_text: String, error: String) {
     log::info!("M2_E2E_REPORT selected={selected_text:?} output={output_text:?} error={error:?}");
 }
 
+fn show_settings_window(app: &AppHandle) {
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.unminimize();
+        let _ = main.show();
+        let _ = main.set_focus();
+    }
+}
+
+/// Menu-bar / system-tray presence. The settings window stays hidden until
+/// asked for, so the app costs nothing on screen while it waits for the shortcut.
+fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
+    use tauri::{
+        menu::{Menu, MenuItem, PredefinedMenuItem},
+        tray::TrayIconBuilder,
+    };
+
+    let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit shakespAIre", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&settings, &PredefinedMenuItem::separator(app)?, &quit])?;
+
+    let mut tray = TrayIconBuilder::with_id("main")
+        .tooltip("shakespAIre")
+        .menu(&menu)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "settings" => show_settings_window(app),
+            "quit" => app.exit(0),
+            _ => {}
+        });
+
+    #[cfg(target_os = "macos")]
+    {
+        // A monochrome template image is tinted by macOS for light/dark menu bars.
+        tray = tray
+            .icon(tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?)
+            .icon_as_template(true);
+    }
+    #[cfg(not(target_os = "macos"))]
+    if let Some(icon) = app.default_window_icon() {
+        tray = tray.icon(icon.clone());
+    }
+
+    tray.build(app)?;
+    Ok(())
+}
+
 fn run_shortcut_flow(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let Some(_clipboard) = ClipboardGuard::acquire() else {
@@ -810,6 +855,15 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .on_window_event(|window, event| {
+            // Closing the settings window only hides it; Quit lives in the tray menu.
+            if window.label() == "main" {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             set_ai_config,
             get_ai_config,
@@ -833,7 +887,20 @@ pub fn run() {
             // Loading config is essential but already logs warnings on failure
             // and never returns an error for keychain/file issues, so the `?`
             // here only surfaces genuinely fatal config problems.
+            let first_run = settings_path(app.handle())
+                .map(|path| !path.exists())
+                .unwrap_or(true);
             load_ai_config(app.handle())?;
+
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            if let Err(error) = setup_tray(app.handle()) {
+                log::warn!("could not create the tray icon: {error}");
+                // Without a tray there would be no way back in; keep the window.
+                show_settings_window(app.handle());
+            } else if first_run {
+                show_settings_window(app.handle());
+            }
 
             // Prewarming the popup window and registering the global shortcut
             // are best-effort: they commonly fail on Linux (no keyring, X11 vs
