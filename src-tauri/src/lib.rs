@@ -31,6 +31,8 @@ static REPLACE_SHORTCUT: OnceLock<Mutex<String>> = OnceLock::new();
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 const DEFAULT_MODEL: &str = "gpt-5.6-luna";
 const KEYCHAIN_SERVICE: &str = "com.artamrj.shakesp-ai-re";
+/// Keychain service used before the app was renamed to shakesp-ai-re.
+const LEGACY_KEYCHAIN_SERVICE: &str = "com.artamrj.shakespaire";
 const KEYCHAIN_ACCOUNT: &str = "ai-api-key";
 const SETTINGS_FILE: &str = "ai-settings.json";
 const FALLBACK_KEY_FILE: &str = "ai-api-key.txt";
@@ -172,6 +174,18 @@ fn fallback_key_path(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|error| format!("could not resolve fallback key directory: {error}"))
 }
 
+/// Copies an API key saved under the pre-rename keychain service into the current one.
+/// The old entry is left untouched.
+fn migrate_legacy_api_key(current: &Entry) -> Option<String> {
+    let legacy = Entry::new(LEGACY_KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT).ok()?;
+    let api_key = legacy.get_password().ok().filter(|key| !key.trim().is_empty())?;
+    match current.set_password(&api_key) {
+        Ok(()) => log::info!("migrated API key from the legacy keychain entry"),
+        Err(error) => log::warn!("could not copy the legacy API key: {error}"),
+    }
+    Some(api_key)
+}
+
 /// Reads the API key from the encrypted platform keychain, falling back to a
 /// local file when the keychain is unavailable (common on Linux without
 /// gnome-keyring/kwallet and on some Windows configurations).
@@ -179,7 +193,11 @@ fn load_api_key(app: &AppHandle) -> String {
     if let Ok(entry) = keychain_entry() {
         match entry.get_password() {
             Ok(api_key) => return api_key,
-            Err(KeyringError::NoEntry) => {}
+            Err(KeyringError::NoEntry) => {
+                if let Some(api_key) = migrate_legacy_api_key(&entry) {
+                    return api_key;
+                }
+            }
             Err(error) => log::warn!(
                 "could not read API key from {}: {error}",
                 credential_store_name()
@@ -1002,7 +1020,6 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .on_window_event(|window, event| {
