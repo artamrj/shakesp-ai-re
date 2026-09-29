@@ -66,15 +66,15 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: ./src-tauri -> target
+          # Save the compiled dependencies even if a later step fails (for example signing or
+          # upload), so a retry does not start from zero.
+          cache-on-failure: true
 
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Check frontend
-        run: npm run check
-
-      - name: Test Rust
-        run: cargo test --manifest-path src-tauri/Cargo.toml
+      # No type-check or test steps here: CI (ci.yml) already gates every merge to main, and
+      # releases are built from main, so repeating them only adds minutes to every platform.
 
       - name: Build installers and upload to the draft release
         uses: tauri-apps/tauri-action@v1
