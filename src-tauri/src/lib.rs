@@ -8,7 +8,10 @@ use std::{
     io::ErrorKind,
     path::PathBuf,
     str::FromStr,
-    sync::{Mutex, OnceLock},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex, OnceLock,
+    },
     time::{Duration, Instant},
 };
 
@@ -31,6 +34,27 @@ const SETTINGS_FILE: &str = "ai-settings.json";
 const FALLBACK_KEY_FILE: &str = "ai-api-key.txt";
 const STREAM_MAX_ATTEMPTS: usize = 3;
 const STREAM_RETRY_DELAYS_MS: [u64; STREAM_MAX_ATTEMPTS - 1] = [250, 700];
+
+/// Capture and replace both borrow the user's clipboard through one shared
+/// save slot, so only one of them may run at a time.
+static CLIPBOARD_BUSY: AtomicBool = AtomicBool::new(false);
+
+struct ClipboardGuard;
+
+impl ClipboardGuard {
+    fn acquire() -> Option<Self> {
+        CLIPBOARD_BUSY
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .ok()
+            .map(|_| Self)
+    }
+}
+
+impl Drop for ClipboardGuard {
+    fn drop(&mut self) {
+        CLIPBOARD_BUSY.store(false, Ordering::Release);
+    }
+}
 
 /// Human-readable name of the platform credential store used in log/user messages.
 fn credential_store_name() -> &'static str {
@@ -429,13 +453,17 @@ async fn replace_text(app: AppHandle, text: String) -> Result<(), String> {
         return Err("replacement text is empty".to_string());
     }
 
+    let _clipboard = ClipboardGuard::acquire()
+        .ok_or_else(|| "another capture or replace is still in progress".to_string())?;
     save_clipboard(&app)?;
     let source_application = PopupWindow::source_application()?;
     let paste_result = async {
         PopupWindow::close(&app)?;
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         if let Some(source_application) = source_application {
-            input::activate_application(&source_application)?;
+            tokio::task::spawn_blocking(move || input::activate_application(&source_application))
+                .await
+                .map_err(|error| error.to_string())??;
         }
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         write_to_clipboard(&app, &text)?;
@@ -624,10 +652,16 @@ fn debug_e2e_report(selected_text: String, output_text: String, error: String) {
 
 fn run_shortcut_flow(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
+        let Some(_clipboard) = ClipboardGuard::acquire() else {
+            log::info!("shortcut ignored: a capture or replace is already running");
+            return;
+        };
         let shortcut_started = Instant::now();
-        let source_application = input::frontmost_application().ok();
+        // osascript is slow and blocking; overlap it with the text capture.
+        let source_task = tokio::task::spawn_blocking(input::frontmost_application);
         let result = async {
             let selected = clipboard::capture_selected_text(&app).await?;
+            let source_application = source_task.await.ok().and_then(Result::ok);
             log::info!(
                 "captured {} selected characters in {} ms",
                 selected.chars().count(),

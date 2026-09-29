@@ -319,7 +319,16 @@ fn popup_position<R: Runtime>(app: &AppHandle<R>) -> Result<PhysicalPosition<i32
             error
         })
         .ok();
-    let selection = crate::input::selected_text_bounds().ok();
+    let selection = match crate::input::selected_text_bounds() {
+        Ok(bounds) => {
+            log::info!("selection bounds: {bounds:?}");
+            Some(bounds)
+        }
+        Err(error) => {
+            log::info!("no selection bounds ({error}); anchoring to the mouse cursor");
+            None
+        }
+    };
     let cursor_monitor = cursor.and_then(|position| {
         app.monitor_from_point(position.x, position.y)
             .map_err(|error| log::warn!("could not resolve monitor at cursor: {error}"))
@@ -347,6 +356,8 @@ fn popup_position<R: Runtime>(app: &AppHandle<R>) -> Result<PhysicalPosition<i32
             monitor_bottom,
             scale,
         );
+        let monitor_left = monitor_position.x as f64;
+        let monitor_top = monitor_position.y as f64;
         let anchor = selection
             .map(|bounds| {
                 (
@@ -354,6 +365,18 @@ fn popup_position<R: Runtime>(app: &AppHandle<R>) -> Result<PhysicalPosition<i32
                     bounds.y * scale,
                     (bounds.y + bounds.height) * scale,
                 )
+            })
+            // Some apps report placeholder rectangles (e.g. x = 0 at the screen
+            // edge). Only trust bounds that actually sit on this monitor.
+            .filter(|&(x, top, bottom)| {
+                let inside = x > monitor_left
+                    && x < monitor_left + monitor_size.width as f64
+                    && top >= monitor_top
+                    && bottom <= monitor_top + monitor_size.height as f64;
+                if !inside {
+                    log::info!("ignoring off-monitor selection bounds; using the mouse cursor");
+                }
+                inside
             })
             .or_else(|| cursor.map(|position| (position.x, position.y, position.y)));
         if anchor.is_none() {
@@ -363,6 +386,9 @@ fn popup_position<R: Runtime>(app: &AppHandle<R>) -> Result<PhysicalPosition<i32
             ));
         }
         let (anchor_x, anchor_top, anchor_bottom) = anchor.expect("anchor checked above");
+        log::info!(
+            "popup anchor ({anchor_x:.0}, {anchor_top:.0}-{anchor_bottom:.0}) scale {scale} cursor {cursor:?}"
+        );
         let (x, y) = anchored_position(
             anchor_x,
             anchor_top,

@@ -2,8 +2,6 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-  import DOMPurify from "dompurify";
-  import { marked } from "marked";
   import { onMount, tick } from "svelte";
 
   let selectedText = $state("");
@@ -22,7 +20,6 @@
   let requestGeneration = 0;
   let resultElement: HTMLElement;
   const platform = new URLSearchParams(window.location.search).get("platform") ?? "unknown";
-  let renderedMarkdown = $derived(renderMarkdown(outputText, isStreaming));
 
   interface StreamRetryEvent {
     attempt: number;
@@ -50,6 +47,9 @@
           popupError = event.payload;
           isStreaming = false;
           retryMessage = "";
+          void tick().then(() => {
+            if (resultElement) resultElement.scrollTop = resultElement.scrollHeight;
+          });
         }),
         await listen("ai-stream-done", () => {
           flushOutput();
@@ -89,22 +89,6 @@
       startTimer = undefined;
       void startProofread();
     }, 0);
-  }
-
-  function renderMarkdown(source: string, streaming: boolean) {
-    if (!source) return "";
-    const parsed = marked.parse(source, { async: false, breaks: true, gfm: true }) as string;
-    const safe = DOMPurify.sanitize(parsed, {
-      ALLOWED_TAGS: ["p", "br", "strong", "b", "em", "i", "s", "code", "pre", "blockquote", "ul", "ol", "li", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "table", "thead", "tbody", "tr", "th", "td"],
-      ALLOWED_ATTR: [],
-    });
-    if (!streaming) return safe;
-
-    const cursor = '<span class="stream-cursor" aria-hidden="true"></span>';
-    const finalTextContainer = /<\/(p|li|h[1-6]|blockquote|pre)>\s*$/i;
-    return finalTextContainer.test(safe)
-      ? safe.replace(finalTextContainer, `${cursor}</$1>`)
-      : `${safe}${cursor}`;
   }
 
   function queueOutput(chunk: string) {
@@ -172,7 +156,7 @@
   }
 
   async function applyReplacement() {
-    if (isStreaming || isApplying || !outputText.trim()) return;
+    if (isStreaming || isApplying || popupError || !outputText.trim()) return;
     isApplying = true;
     popupError = "";
     try {
@@ -243,7 +227,7 @@
 
   <section bind:this={resultElement} class="result" class:loading={isStreaming} aria-live="polite" aria-busy={isStreaming}>
     {#if outputText}
-      <div class="markdown">{@html renderedMarkdown}</div>
+      <div class="markdown">{outputText}{#if isStreaming}<span class="stream-cursor" aria-hidden="true"></span>{/if}</div>
     {:else if !popupError}
       <div class="skeleton" aria-label="Preparing your proofread result"><i></i><i></i><i></i></div>
     {/if}
@@ -262,7 +246,7 @@
   </section>
 
   <footer class="popup-actions">
-    <button class="primary" onclick={applyReplacement} disabled={isTestPopup || isStreaming || isApplying || !outputText.trim()} title={isTestPopup ? "Replacement is disabled in test mode" : "Replace selected text"}>
+    <button class="primary" onclick={applyReplacement} disabled={isTestPopup || isStreaming || isApplying || !!popupError || !outputText.trim()} title={isTestPopup ? "Replacement is disabled in test mode" : "Replace selected text"}>
       {#if isApplying}<span class="button-spinner"></span>{/if}
       {isTestPopup ? "Preview" : isApplying ? "Replacing" : "Replace"}
     </button>
@@ -283,7 +267,7 @@
   :global(button) { font: inherit; }
   .popup-shell { position: relative; display: flex; flex-direction: column; height: 100vh; overflow: hidden; border: 1px solid rgba(255,255,255,.30); border-radius: 16px; background: linear-gradient(135deg, rgba(255,255,255,.13), rgba(238,242,250,.07)); box-shadow: inset 0 1px 0 rgba(255,255,255,.32); backdrop-filter: blur(28px) saturate(1.35); -webkit-backdrop-filter: blur(28px) saturate(1.35); font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; font-synthesis: none; font-weight: 300; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
   .popup-shell.platform-windows { font-family: "Segoe UI Variable Text", "Segoe UI", -apple-system, sans-serif; }
-  .popup-shell.platform-linux { font-family: Inter, "Noto Sans", Ubuntu, Cantarell, sans-serif; }
+  .popup-shell.platform-linux { font-family: Inter, "Noto Sans", Ubuntu, Cantarell, sans-serif; background: linear-gradient(135deg, rgba(248, 249, 252, 0.92), rgba(238, 242, 250, 0.88)); backdrop-filter: none; -webkit-backdrop-filter: none; }
   .popup-header { position: relative; z-index: 1; display: flex; align-items: center; flex: 0 0 auto; height: 36px; padding: 0 9px 0 14px; border-bottom: 1px solid rgba(87,94,108,.09); user-select: none; }
   .popup-title { display: flex; align-items: center; color: rgba(28,29,33,.80); font-size: 12px; font-weight: 400; }
   .popup-title strong { font-weight: 400; }
@@ -291,24 +275,7 @@
   .icon-button svg { width: 12px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.4; }
   .icon-button:hover { background: rgba(60,64,72,.08); color: rgba(35,38,44,.72); }
   .result { position: relative; z-index: 1; flex: 1 1 auto; min-height: 0; padding: 11px 15px 10px; overflow-y: auto; scrollbar-color: rgba(95,103,120,.16) transparent; scrollbar-width: thin; }
-  .markdown { color: rgba(38,40,46,.78); font-size: 12px; font-variation-settings: "wght" 300; font-weight: 300; letter-spacing: .005em; line-height: 1.52; overflow-wrap: anywhere; }
-  .markdown :global(:first-child) { margin-top: 0; }
-  .markdown :global(:last-child) { margin-bottom: 0; }
-  .markdown :global(p) { margin: 0 0 8px; }
-  .markdown :global(h1), .markdown :global(h2), .markdown :global(h3), .markdown :global(h4), .markdown :global(h5), .markdown :global(h6) { margin: 11px 0 5px; color: rgba(25,27,32,.86); font-size: 12px; font-weight: 500; line-height: 1.35; }
-  .markdown :global(h1) { font-size: 14px; }
-  .markdown :global(h2) { font-size: 13px; }
-  .markdown :global(strong), .markdown :global(b) { font-weight: 500; color: rgba(27,29,34,.88); }
-  .markdown :global(ul), .markdown :global(ol) { margin: 5px 0 8px; padding-left: 18px; }
-  .markdown :global(li) { margin: 2px 0; padding-left: 1px; }
-  .markdown :global(blockquote) { margin: 7px 0; padding: 2px 0 2px 9px; border-left: 2px solid rgba(104,87,217,.32); color: rgba(48,51,58,.65); }
-  .markdown :global(code) { padding: 1px 4px; border-radius: 4px; background: rgba(72,77,88,.09); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; }
-  .markdown :global(pre) { margin: 7px 0; padding: 8px 9px; overflow-x: auto; border: 1px solid rgba(70,76,88,.08); border-radius: 8px; background: rgba(58,62,72,.07); line-height: 1.45; }
-  .markdown :global(pre code) { padding: 0; background: transparent; }
-  .markdown :global(hr) { margin: 9px 0; border: 0; border-top: 1px solid rgba(78,84,96,.11); }
-  .markdown :global(table) { width: 100%; margin: 7px 0; border-collapse: collapse; font-size: 10.5px; }
-  .markdown :global(th), .markdown :global(td) { padding: 4px 5px; border-bottom: 1px solid rgba(78,84,96,.10); text-align: left; }
-  .markdown :global(th) { font-weight: 500; }
+  .markdown { color: rgba(38,40,46,.78); font-size: 12px; font-variation-settings: "wght" 300; font-weight: 300; letter-spacing: .005em; line-height: 1.52; overflow-wrap: anywhere; white-space: pre-wrap; }
   .stream-status { display: flex; align-items: center; gap: 6px; margin-left: auto; color: #7d828c; font-size: 9px; font-weight: 300; }
   .stream-status i { width: 6px; height: 6px; border-radius: 50%; background: #7060df; box-shadow: 0 0 0 3px rgba(112,96,223,.10); animation: pulse 1s infinite alternate; }
   .done-status { display: flex; align-items: center; gap: 3px; margin-left: auto; color: rgba(59,112,76,.72); font-size: 9px; font-weight: 400; }

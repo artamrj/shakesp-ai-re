@@ -31,7 +31,7 @@ Select text in **any** application, press a global shortcut, and a small floatin
 
 - **Works anywhere** — email, docs, browsers, terminals, chat apps. Not bound to any single editor.
 - **Strict proofreading** — fixes only grammar, spelling, and punctuation. Preserves your meaning, voice, tone, style, slang, dialect, emoji, and formatting.
-- **Streaming results** — output streams in as it's generated, rendered as sanitized markdown.
+- **Streaming results** — output streams in as it's generated and is shown exactly as it will be pasted.
 - **Customizable shortcut** — record your own global shortcut from Settings; changes apply immediately and persist across launches.
 - **OpenAI-compatible** — bring your own API key, or point it at a local model (Ollama, LM Studio, anything speaking the Chat Completions API).
 - **Keychain-secured** — your API key lives in the OS keychain, never in a plain settings file.

@@ -103,7 +103,7 @@ pub fn selected_text_bounds() -> Result<TextBounds, String> {
             &mut rect as *mut Rect as *mut std::ffi::c_void,
         );
         CFRelease(bounds_value);
-        if !decoded || rect.size.width < 0.0 || rect.size.height < 0.0 {
+        if !decoded || rect.size.width < 0.0 || rect.size.height <= 0.0 {
             return Err("the selected text bounds were invalid".to_string());
         }
 
@@ -221,7 +221,25 @@ pub fn shortcut_modifiers_pressed() -> bool {
         .any(|key| unsafe { GetAsyncKeyState(key.0 as i32) as u16 & 0x8000 != 0 })
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
+pub fn shortcut_modifiers_pressed() -> bool {
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGEventSourceFlagsState(state_id: i32) -> u64;
+    }
+    // Shift | Control | Option | Command, read from the physical keyboard state.
+    const MODIFIER_MASK: u64 = 0x2_0000 | 0x4_0000 | 0x8_0000 | 0x10_0000;
+    const HID_SYSTEM_STATE: i32 = 1;
+    unsafe { CGEventSourceFlagsState(HID_SYSTEM_STATE) & MODIFIER_MASK != 0 }
+}
+
+/// Whether this process is allowed to post keyboard events and read other apps' UI.
+#[cfg(target_os = "macos")]
+pub fn accessibility_trusted() -> bool {
+    unsafe { accessibility_sys::AXIsProcessTrusted() }
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub fn shortcut_modifiers_pressed() -> bool {
     false
 }

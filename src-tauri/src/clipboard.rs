@@ -96,6 +96,10 @@ pub async fn capture_selected_text<R: Runtime>(app: &AppHandle<R>) -> Result<Str
                 }
             }
             if tokio::time::Instant::now() >= deadline {
+                #[cfg(target_os = "macos")]
+                if !input::accessibility_trusted() {
+                    break Err("Accessibility permission is missing. Enable it for this app (or the terminal running it) in System Settings → Privacy & Security → Accessibility, then try again.".to_string());
+                }
                 break Err("no text selection was captured".to_string());
             }
             tokio::time::sleep(tokio::time::Duration::from_millis(8)).await;
