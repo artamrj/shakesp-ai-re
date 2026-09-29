@@ -621,6 +621,11 @@ fn test_popup(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn resize_popup(app: AppHandle, height: f64) -> Result<(), String> {
+    PopupWindow::resize(&app, height)
+}
+
+#[tauri::command]
 fn close_popup(app: AppHandle) -> Result<(), String> {
     PopupWindow::close(&app)
 }
@@ -818,6 +823,7 @@ pub fn run() {
             stream_ai_text,
             show_popup,
             test_popup,
+            resize_popup,
             close_popup,
             debug_e2e_enabled,
             debug_trigger_shortcut,

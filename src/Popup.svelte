@@ -18,6 +18,7 @@
   let copyTimer: number | undefined;
   let pendingOutput = "";
   let requestGeneration = 0;
+  let requestedHeight = 0;
   let resultElement: HTMLElement;
   const platform = new URLSearchParams(window.location.search).get("platform") ?? "unknown";
 
@@ -48,6 +49,7 @@
           isStreaming = false;
           retryMessage = "";
           void tick().then(() => {
+            growIfScrollable();
             if (resultElement) resultElement.scrollTop = resultElement.scrollHeight;
           });
         }),
@@ -105,12 +107,25 @@
     outputText += pendingOutput;
     pendingOutput = "";
     void tick().then(() => {
+      growIfScrollable();
       if (resultElement) resultElement.scrollTop = resultElement.scrollHeight;
     });
   }
 
+  // Grow the window a little (the backend caps it) when the result overflows.
+  function growIfScrollable() {
+    if (!resultElement) return;
+    const overflow = resultElement.scrollHeight - resultElement.clientHeight;
+    if (overflow <= 1) return;
+    const wanted = Math.ceil(window.innerHeight + overflow);
+    if (wanted <= requestedHeight) return;
+    requestedHeight = wanted;
+    void invoke("resize_popup", { height: wanted }).catch(() => {});
+  }
+
   async function startProofread() {
     const generation = ++requestGeneration;
+    requestedHeight = 0;
     selectedText = "";
     outputText = "";
     pendingOutput = "";
@@ -227,7 +242,7 @@
 
   <section bind:this={resultElement} class="result" class:loading={isStreaming} aria-live="polite" aria-busy={isStreaming}>
     {#if outputText}
-      <div class="markdown">{outputText}{#if isStreaming}<span class="stream-cursor" aria-hidden="true"></span>{/if}</div>
+      <div class="markdown" dir="auto">{outputText}{#if isStreaming}<span class="stream-cursor" aria-hidden="true"></span>{/if}</div>
     {:else if !popupError}
       <div class="skeleton" aria-label="Preparing your proofread result"><i></i><i></i><i></i></div>
     {/if}
@@ -275,12 +290,12 @@
   .icon-button svg { width: 12px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.4; }
   .icon-button:hover { background: rgba(60,64,72,.08); color: rgba(35,38,44,.72); }
   .result { position: relative; z-index: 1; flex: 1 1 auto; min-height: 0; padding: 11px 15px 10px; overflow-y: auto; scrollbar-color: rgba(95,103,120,.16) transparent; scrollbar-width: thin; }
-  .markdown { color: rgba(38,40,46,.78); font-size: 12px; font-variation-settings: "wght" 300; font-weight: 300; letter-spacing: .005em; line-height: 1.52; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .markdown { color: rgba(38,40,46,.78); font-size: 12px; font-variation-settings: "wght" 300; font-weight: 300; letter-spacing: .005em; line-height: 1.52; overflow-wrap: anywhere; white-space: pre-wrap; unicode-bidi: plaintext; text-align: start; }
   .stream-status { display: flex; align-items: center; gap: 6px; margin-left: auto; color: #7d828c; font-size: 9px; font-weight: 300; }
   .stream-status i { width: 6px; height: 6px; border-radius: 50%; background: #7060df; box-shadow: 0 0 0 3px rgba(112,96,223,.10); animation: pulse 1s infinite alternate; }
   .done-status { display: flex; align-items: center; gap: 3px; margin-left: auto; color: rgba(59,112,76,.72); font-size: 9px; font-weight: 400; }
   .done-status svg { width: 10px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5; }
-  .markdown :global(.stream-cursor) { display: inline-block; width: 1.5px; height: .95em; margin-left: 2px; border-radius: 2px; background: #6857d9; vertical-align: -.1em; animation: blink .72s steps(1) infinite; }
+  .markdown :global(.stream-cursor) { display: inline-block; width: 1.5px; height: .95em; margin-inline-start: 2px; border-radius: 2px; background: #6857d9; vertical-align: -.1em; animation: blink .72s steps(1) infinite; }
   .skeleton { display: grid; gap: 12px; padding-top: 3px; }
   .skeleton i { display: block; height: 10px; border-radius: 999px; background: linear-gradient(90deg, rgba(119,127,143,.13) 20%, rgba(119,127,143,.23) 40%, rgba(119,127,143,.13) 60%); background-size: 300% 100%; animation: shimmer 1.35s ease infinite; }
   .skeleton i:nth-child(2) { width: 92%; }

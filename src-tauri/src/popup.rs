@@ -12,6 +12,7 @@ use tauri::{
 const POPUP_LABEL: &str = "popup";
 const POPUP_WIDTH: f64 = 320.0;
 const POPUP_HEIGHT: f64 = 170.0;
+const POPUP_MAX_HEIGHT: f64 = 250.0;
 const POPUP_GAP: f64 = 8.0;
 const POPUP_EDGE_MARGIN: f64 = 10.0;
 const AUTO_HIDE_DOCK_CLEARANCE: f64 = 88.0;
@@ -119,6 +120,32 @@ impl PopupWindow {
             window.set_focus().map_err(|error| error.to_string())?;
         }
         let _ = window.emit("popup-reset", ());
+        Ok(())
+    }
+
+    /// Grows the popup a little so longer results need less scrolling, keeping
+    /// it inside the monitor's work area.
+    pub fn resize<R: Runtime>(app: &AppHandle<R>, height: f64) -> Result<(), String> {
+        let window = app
+            .get_webview_window(POPUP_LABEL)
+            .ok_or_else(|| "popup window is not available".to_string())?;
+        let height = height.clamp(POPUP_HEIGHT, POPUP_MAX_HEIGHT);
+        window
+            .set_size(LogicalSize::new(POPUP_WIDTH, height))
+            .map_err(|error| error.to_string())?;
+
+        if let (Ok(Some(monitor)), Ok(position)) = (window.current_monitor(), window.outer_position())
+        {
+            let scale = monitor.scale_factor();
+            let work_area = monitor.work_area();
+            let top = work_area.position.y as f64;
+            let limit = top + work_area.size.height as f64 - POPUP_EDGE_MARGIN * scale;
+            let physical_height = height * scale;
+            if position.y as f64 + physical_height > limit {
+                let y = (limit - physical_height).max(top);
+                let _ = window.set_position(PhysicalPosition::new(position.x, y.round() as i32));
+            }
+        }
         Ok(())
     }
 
