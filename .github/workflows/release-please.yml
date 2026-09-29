@@ -45,6 +45,10 @@ jobs:
     uses: ./.github/workflows/release.yml
     with:
       tag: ${{ needs.release-please.outputs.tag_name }}
+    # A called workflow does not see the repository secrets unless they are passed on. Without
+    # this the update signing key is empty and the build fails with a misleading
+    # "incorrect updater private key password" error.
+    secrets: inherit
 
   publish:
     name: Publish release
