@@ -1,7 +1,7 @@
 version: 2
 
 # Titles use Conventional Commit prefixes so the PR-title check and release-please accept them.
-# Weekly, grouped so a week of updates is one pull request per ecosystem, not a dozen.
+# Monthly, grouped so a month of updates is one pull request per ecosystem, not a dozen.
 # Tauri's Rust crates and its npm packages must stay on the same minor version
 # (a mismatch makes `tauri dev` refuse to start), and Dependabot cannot update two
 # ecosystems together. So only patch releases of the Tauri family are automated;
@@ -10,7 +10,7 @@ updates:
   - package-ecosystem: npm
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     commit-message:
       prefix: "build(deps)"
     open-pull-requests-limit: 5
@@ -24,7 +24,7 @@ updates:
   - package-ecosystem: cargo
     directory: /src-tauri
     schedule:
-      interval: weekly
+      interval: monthly
     commit-message:
       prefix: "build(deps)"
     open-pull-requests-limit: 5
@@ -40,7 +40,7 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     commit-message:
       prefix: "ci"
     groups:
