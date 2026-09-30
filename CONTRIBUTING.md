@@ -52,7 +52,7 @@ identifiers, file names, and URLs.
 ## Where things live
 
 See the "Project layout" section of the [README](README.md). How CI and releases work is described
-in [.github/README.md](.github/README.md).
+in [.github/CI.md](.github/CI.md).
 
 ## Good first issues
 

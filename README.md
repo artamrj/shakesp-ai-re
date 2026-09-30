@@ -275,14 +275,14 @@ src-tauri/               Rust backend (Tauri 2)
   src/glass.rs           Native glass/vibrancy backdrop
   src/updater.rs         Menu bar self-update
 docs/RELEASING.md        Release, signing, and updater guide
-.github/                 CI, releases, Dependabot (see .github/README.md)
+.github/                 CI, releases, Dependabot (see .github/CI.md)
 ```
 
 ## Releasing
 
 Releases are automatic and driven by commit messages. Merge changes with [Conventional Commit](https://www.conventionalcommits.org) titles (`feat:`, `fix:`, …); a bot keeps a **Release pull request** up to date with the next version and changelog. Merging it builds and publishes the installers after one approval. Nobody edits a version number or pushes a tag by hand.
 
-The whole pipeline is described in [`.github/README.md`](.github/README.md). Signing, notarization, and the updater key are covered in [`docs/RELEASING.md`](docs/RELEASING.md).
+The whole pipeline is described in [`.github/CI.md`](.github/CI.md). Signing, notarization, and the updater key are covered in [`docs/RELEASING.md`](docs/RELEASING.md).
 
 ## Contributing
 
