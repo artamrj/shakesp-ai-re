@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/artamrj/shakesp-ai-re/compare/v0.3.0...v0.3.1) (2026-10-14)
+
+
+### Bug fixes
+
+* stop the proofreading preview flagging a dropped line break ([8c4beee](https://github.com/artamrj/shakesp-ai-re/commit/8c4beee417ad9d0573ab57ad1a344a1634f08fb5))
+
 ## [0.3.0](https://github.com/artamrj/shakesp-ai-re/compare/v0.2.2...v0.3.0) (2026-10-14)
 
 
