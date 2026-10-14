@@ -4229,7 +4229,7 @@ dependencies = [
 
 [[package]]
 name = "shakesp-ai-re"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "accessibility-sys",
  "block2",
