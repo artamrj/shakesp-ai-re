@@ -46,6 +46,7 @@ Select text in **any** application, press a global shortcut, and a small floatin
 - **Works anywhere** — email, docs, browsers, terminals, chat apps. Not bound to any single editor.
 - **Strict proofreading** — fixes only grammar, spelling, and punctuation. Preserves your meaning, voice, tone, style, slang, dialect, emoji, and formatting. Corrects in the language you wrote in.
 - **Streaming results** — output streams in as it is generated and is shown exactly as it will be pasted. The popup grows a little for long results.
+- **Optional change preview** — enable **Show changes** to review highlighted additions and deletions after proofreading. A small eye button in the popup header toggles highlights; Replace and Copy always use the clean corrected text.
 - **Menu bar app** — no window on launch and no Dock icon. One icon gives you your version, update checks, Settings, and Quit.
 - **Customizable keys** — record your own global shortcut and your own **Replace** key (default **Enter**) from Settings. Changes apply immediately.
 - **OpenAI-compatible** — bring your own API key, or point it at a local model (Ollama, LM Studio, anything speaking the Chat Completions API).
@@ -93,7 +94,11 @@ The trigger shortcut and the Replace key are both [customizable](#customizing-th
 
 ### The proofread popup
 
-The popup shows a status (`Connecting` → `Writing` → `Ready`), the result exactly as it will be pasted, and three actions: **Replace**, **Copy**, and **Close**. If something goes wrong, it shows the message and a **Try again** button, and **Replace** stays disabled so a half-finished result can never overwrite your text.
+The popup shows a status while connecting and writing, the result exactly as it will be pasted, and three actions: **Replace**, **Copy**, and **Close**. If something goes wrong, it shows the message and a **Try again** button, and **Replace** stays disabled so a half-finished result can never overwrite your text.
+
+Enable **Show changes** in Settings to open a change preview when proofreading finishes. Added text is underlined in green; removed text is struck through in red. Whitespace-only edits use visible markers (`·` for a space, `⇥` for a tab, and `↵` for a line break). Use the eye button in the header to toggle highlights and the clean result. The popup fits the displayed text without a separate toolbar or change count. Replace and Copy always use the corrected text, without deleted text or markers. If a selection is too large or too different to compare quickly, the popup shows the clean result instead.
+
+When the result exactly matches your selection, the status says **Already looks good**.
 
 ### The menu bar icon
 
@@ -118,10 +123,11 @@ Choose **Settings…** from the menu bar icon. On first launch the window opens 
 | **Connection → Test connection** | | Sends a tiny request using the values in the form, *without saving them*. Shows **Connected** or the reason it failed. |
 | **Shortcut** | ⇧⌘Space / Shift+Ctrl+Space | Global trigger. |
 | **Replace key** | Enter | Used inside the popup. |
+| **Show changes** | off | Highlights edits after proofreading. Saves immediately and applies to an open popup. |
 | **Launch at login** | off | Starts shakespAIre quietly in the menu bar when you log in. |
 | **Accessibility** *(macOS)* | | Shows whether the permission is granted, with a link to fix it. |
 
-Click **Save** to store the server, key, and model. The keys and the login switch apply as soon as you change them. **Preview popup** (under the Save button) opens the popup on a sample sentence and streams a real proofread, so you can check your setup end to end. **Replace** is disabled in the preview.
+Click **Save** to store the server, key, and model. The keys, Show changes, and the login switch apply as soon as you change them. **Preview popup** (under the Save button) opens the popup on a sample sentence and streams a real proofread, so you can check your setup end to end. **Replace** is disabled in the preview.
 
 ### Local models
 
@@ -231,6 +237,7 @@ npm install                 # install frontend deps
 npm run tauri dev           # run a dev build
 npm run dev:side-by-side    # dev build with its own settings, next to an installed copy
 npm run check               # svelte-check (typecheck the frontend)
+npm test                    # text comparison tests (Node.js 22.6+)
 cargo fmt --manifest-path src-tauri/Cargo.toml --check   # formatting
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path src-tauri/Cargo.toml          # Rust tests
@@ -263,6 +270,8 @@ Then open the dev copy's Settings and choose a **different shortcut** from the i
 src/                     Svelte 5 frontend (settings window and popup)
   App.svelte             Settings window
   Popup.svelte           Proofread popup
+  TextDiff.svelte        Display-only change highlights
+  text-diff.ts           Bounded, Unicode-aware text comparison
   theme.css              Shared design system
   shortcut.ts            Shortcut parsing and labels
   fonts/                 Bundled Inter (SIL OFL)

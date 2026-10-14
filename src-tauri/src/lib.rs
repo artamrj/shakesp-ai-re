@@ -29,6 +29,7 @@ use tokio_stream::StreamExt;
 static AI_CONFIG: OnceLock<Mutex<AiConfig>> = OnceLock::new();
 static ACTIVE_SHORTCUT: OnceLock<Mutex<String>> = OnceLock::new();
 static REPLACE_SHORTCUT: OnceLock<Mutex<String>> = OnceLock::new();
+static SHOW_CHANGES: AtomicBool = AtomicBool::new(false);
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 const DEFAULT_MODEL: &str = "gpt-5.6-luna";
 const KEYCHAIN_SERVICE: &str = "com.artamrj.shakesp-ai-re";
@@ -88,6 +89,8 @@ struct PersistedAiConfig {
     shortcut: String,
     #[serde(default = "default_replace_shortcut")]
     replace_shortcut: String,
+    #[serde(default)]
+    show_changes: bool,
 }
 
 fn default_replace_shortcut() -> String {
@@ -310,6 +313,7 @@ fn load_ai_config(app: &AppHandle) -> Result<(), String> {
     match fs::read_to_string(&path) {
         Ok(contents) => match serde_json::from_str::<PersistedAiConfig>(&contents) {
             Ok(saved) => {
+                SHOW_CHANGES.store(saved.show_changes, Ordering::Relaxed);
                 if !saved.base_url.trim().is_empty() {
                     config.base_url = saved.base_url;
                 }
@@ -384,6 +388,7 @@ fn write_settings_file(app: &AppHandle, config: &AiConfig) -> Result<(), String>
             .lock()
             .map_err(|error| error.to_string())?
             .clone(),
+        show_changes: SHOW_CHANGES.load(Ordering::Relaxed),
     };
     let contents = serde_json::to_vec_pretty(&persisted)
         .map_err(|error| format!("could not encode settings: {error}"))?;
@@ -406,6 +411,7 @@ mod persistence_tests {
             model: "example-model".to_string(),
             shortcut: "Control+Shift+Space".to_string(),
             replace_shortcut: "Enter".to_string(),
+            show_changes: true,
         };
         let json = serde_json::to_string(&settings).expect("settings should serialize");
 
@@ -420,6 +426,22 @@ mod persistence_tests {
         .expect("old settings should remain compatible");
 
         assert_eq!(settings.shortcut, default_shortcut());
+        assert_eq!(settings.replace_shortcut, "Enter");
+        assert!(!settings.show_changes);
+    }
+
+    #[test]
+    fn show_changes_preference_survives_serialization() {
+        for enabled in [false, true] {
+            let settings: PersistedAiConfig = serde_json::from_str(&format!(
+                r#"{{"base_url":"https://example.com/v1","model":"example-model","show_changes":{enabled}}}"#,
+            ))
+            .expect("settings should deserialize");
+            let json = serde_json::to_string(&settings).expect("settings should serialize");
+            let restored: PersistedAiConfig =
+                serde_json::from_str(&json).expect("settings should round-trip");
+            assert_eq!(restored.show_changes, enabled);
+        }
     }
 
     #[test]
@@ -470,6 +492,26 @@ fn get_replace_shortcut() -> Result<String, String> {
         .lock()
         .map(|value| value.clone())
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn get_show_changes() -> bool {
+    SHOW_CHANGES.load(Ordering::Relaxed)
+}
+
+#[tauri::command]
+fn set_show_changes(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let config = ai_config().lock().map_err(|error| error.to_string())?;
+    let previous = SHOW_CHANGES.swap(enabled, Ordering::Relaxed);
+    // This display preference does not change the API key or contact the provider.
+    if let Err(error) = write_settings_file(&app, &config) {
+        SHOW_CHANGES.store(previous, Ordering::Relaxed);
+        return Err(format!("Could not save Show changes: {error}"));
+    }
+    // The popup is prewarmed and reused, so notify it as well as persisting the setting.
+    app.emit("show-changes-changed", enabled)
+        .unwrap_or_else(|error| log::warn!("could not notify windows of Show changes: {error}"));
+    Ok(())
 }
 
 #[tauri::command]
@@ -1080,6 +1122,8 @@ pub fn run() {
             get_shortcut,
             get_replace_shortcut,
             set_replace_shortcut,
+            get_show_changes,
+            set_show_changes,
             set_shortcut,
             capture_selected_text,
             get_popup_selection,

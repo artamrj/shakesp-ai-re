@@ -50,6 +50,10 @@
   --accent: #5856d6;
   --danger: #d70015;
   --success: #248a3d;
+  --diff-added: #1b6b30;
+  --diff-removed: #b5192b;
+  --diff-added-bg: color-mix(in srgb, var(--success) 12%, transparent);
+  --diff-removed-bg: color-mix(in srgb, var(--danger) 9%, transparent);
 
   --radius-panel: 14px;
   --radius-key: 6px;
@@ -70,6 +74,8 @@
     --accent: #7d7aff;
     --danger: #ff6961;
     --success: #32d74b;
+    --diff-added: #82e69b;
+    --diff-removed: #ffaaa4;
   }
 }
 

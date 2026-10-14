@@ -26,6 +26,9 @@
   let accessibilityOk = $state(true);
   let launchAtLogin = $state(false);
   let isTogglingLogin = $state(false);
+  let showChanges = $state(false);
+  let isTogglingChanges = $state(false);
+  let changesNote = $state("");
   const isMac = navigator.userAgent.includes("Mac");
 
   const shortcutParts = (value: string) => formatParts(value, isMac);
@@ -58,6 +61,7 @@
         config = await invoke<typeof config>("get_ai_config");
         shortcut = await invoke<string>("get_shortcut");
         replaceShortcut = await invoke<string>("get_replace_shortcut");
+        showChanges = await invoke<boolean>("get_show_changes");
       } catch (error) {
         note("connection", `Could not load settings: ${error}`);
       }
@@ -143,6 +147,21 @@
       await invoke("test_popup");
     } catch (error) {
       note("shortcut", `Popup preview failed: ${error}`);
+    }
+  }
+
+  async function toggleShowChanges() {
+    if (isTogglingChanges) return;
+    isTogglingChanges = true;
+    changesNote = "";
+    const enabled = !showChanges;
+    try {
+      await invoke("set_show_changes", { enabled });
+      showChanges = enabled;
+    } catch (error) {
+      changesNote = String(error);
+    } finally {
+      isTogglingChanges = false;
     }
   }
 
@@ -270,6 +289,14 @@
           </button>
         </div>
       {/each}
+      <div class="row preference-row">
+        <div class="preference-label">
+          <span id="show-changes-label">Show changes</span>
+          <p id="show-changes-description">Highlight edits after proofreading.</p>
+        </div>
+        <button class="switch" class:on={showChanges} type="button" role="switch" aria-checked={showChanges} aria-labelledby="show-changes-label" aria-describedby="show-changes-description" disabled={isTogglingChanges} onclick={toggleShowChanges}><i></i></button>
+      </div>
+      {#if changesNote}<p class="row note" role="alert">{changesNote}</p>{/if}
       <div class="row">
         <span>Launch at login</span>
         <button class="switch" class:on={launchAtLogin} type="button" role="switch" aria-checked={launchAtLogin} aria-label="Launch at login" disabled={isTogglingLogin} onclick={toggleLaunchAtLogin}><i></i></button>
@@ -299,7 +326,7 @@
 {/if}
 
 <style>
-  .shell { display: flex; flex-direction: column; gap: 14px; height: 100vh; padding: 20px 20px 16px; user-select: none; }
+  .shell { display: flex; flex-direction: column; gap: 14px; height: 100vh; padding: 20px 20px 16px; user-select: none; overflow-y: auto; }
 
   .panel { flex: none; margin: 0; overflow: hidden; }
   .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 46px; padding: 0 14px; }
@@ -308,6 +335,9 @@
   .row input { flex: 1; min-width: 0; height: 30px; padding: 0 10px; border: 1px solid var(--field-edge); border-radius: 8px; outline: 0; background: var(--field); user-select: text; text-overflow: ellipsis; transition: border-color 0.15s ease, box-shadow 0.15s ease; }
   .row input::placeholder { color: var(--secondary); opacity: 0.7; }
   .row input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+  .preference-row { min-height: 62px; }
+  .preference-label { min-width: 0; padding-block: 10px; }
+  .preference-label p { margin: 4px 0 0; color: var(--secondary); font-size: 11px; line-height: 1.4; }
 
   .recorder { display: flex; align-items: center; gap: 4px; min-height: 26px; padding: 0 6px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; }
   .recorder:hover:not(:disabled) { background: var(--key); }

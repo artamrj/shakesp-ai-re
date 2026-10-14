@@ -4,6 +4,8 @@
   import { writeText } from "@tauri-apps/plugin-clipboard-manager";
   import { onMount, tick } from "svelte";
   import { eventShortcut, shortcutParts } from "./shortcut";
+  import TextDiff from "./TextDiff.svelte";
+  import { compareText } from "./text-diff";
 
   let selectedText = $state("");
   let outputText = $state("");
@@ -21,6 +23,15 @@
   let requestGeneration = 0;
   let requestedHeight = 0;
   let replaceShortcut = $state("Enter");
+  let showChanges = $state(false);
+  let resultView = $state<"result" | "changes">("changes");
+  let isComplete = $state(false);
+  const unchanged = $derived(isComplete && !popupError && outputText === selectedText);
+  // Compare once the final result arrives; partial streams are not meaningful edits.
+  const comparison = $derived(showChanges && isComplete && !popupError
+    ? compareText(selectedText, outputText)
+    : null);
+  const reviewingChanges = $derived(resultView === "changes" && comparison !== null && comparison.changeCount > 0);
   const isMac = navigator.userAgent.includes("Mac");
   let resultElement: HTMLElement;
 
@@ -58,6 +69,7 @@
         await listen("ai-stream-done", () => {
           flushOutput();
           isStreaming = false;
+          isComplete = true;
           retryMessage = "";
           void invoke("debug_e2e_report", {
             selectedText,
@@ -68,6 +80,10 @@
         await listen("popup-reset", () => {
           window.focus();
           scheduleProofread();
+        }),
+        await listen<boolean>("show-changes-changed", (event) => {
+          showChanges = event.payload;
+          resultView = "changes";
         }),
       );
 
@@ -88,6 +104,17 @@
       window.removeEventListener("keydown", handleKeydown);
       for (const unlisten of unlisteners) unlisten();
     };
+  });
+
+  $effect(() => {
+    // Fit the finished view, including shrinking when highlights are hidden.
+    reviewingChanges;
+    const completed = isComplete && !popupError;
+    void tick().then(() => {
+      if (!completed || !resultElement) return;
+      fitCompletedResult();
+      resultElement.scrollTop = 0;
+    });
   });
 
   function scheduleProofread() {
@@ -124,8 +151,23 @@
     if (overflow <= 1) return;
     const wanted = Math.ceil(window.innerHeight + overflow);
     if (wanted <= requestedHeight) return;
-    requestedHeight = wanted;
-    void invoke("resize_popup", { height: wanted }).catch(() => {});
+    requestPopupHeight(wanted);
+  }
+
+  function fitCompletedResult() {
+    const content = resultElement?.firstElementChild;
+    if (!(content instanceof HTMLElement)) return;
+    const style = window.getComputedStyle(resultElement);
+    const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+    const chrome = window.innerHeight - resultElement.clientHeight;
+    // The backend clamps this to the popup's existing minimum and maximum sizes.
+    requestPopupHeight(Math.ceil(chrome + content.getBoundingClientRect().height + padding));
+  }
+
+  function requestPopupHeight(height: number) {
+    if (height === requestedHeight) return;
+    requestedHeight = height;
+    void invoke("resize_popup", { height }).catch(() => {});
   }
 
   async function startProofread() {
@@ -147,12 +189,15 @@
     isApplying = false;
     isTestPopup = false;
     copyState = "idle";
+    isComplete = false;
+    resultView = "changes";
 
     try {
-      const [capturedText, testMode, contextError] = await Promise.all([
+      const [capturedText, testMode, contextError, changesEnabled] = await Promise.all([
         invoke<string>("get_popup_selection"),
         invoke<boolean>("get_popup_test_mode"),
         invoke<string>("get_popup_error"),
+        invoke<boolean>("get_show_changes").catch(() => false),
       ]);
       if (generation !== requestGeneration) return;
       if (contextError) {
@@ -161,6 +206,7 @@
       }
       if (!capturedText.trim()) return;
       selectedText = capturedText;
+      showChanges = changesEnabled;
       isTestPopup = testMode;
       isStreaming = true;
       await invoke("stream_ai_text", { selectedText });
@@ -211,10 +257,15 @@
   }
 
   function handleKeydown(event: KeyboardEvent) {
+    // Enter/Space should activate a focused control, including the highlights button,
+    // rather than unexpectedly replacing the selection behind the popup.
+    const activatesButton = event.target instanceof HTMLElement
+      && !!event.target.closest("button")
+      && (event.key === "Enter" || event.key === " ");
     if (event.key === "Escape") {
       event.preventDefault();
       void closePopup();
-    } else if (!event.isComposing && eventShortcut(event) === replaceShortcut) {
+    } else if (!event.isComposing && !activatesButton && eventShortcut(event) === replaceShortcut) {
       event.preventDefault();
       void applyReplacement();
     } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "c") {
@@ -229,22 +280,41 @@
     <div class="popup-title">
       <strong>Proofread</strong>
     </div>
-    {#if isStreaming}
-      <span class="stream-status"><i></i>{streamStatus}</span>
-    {:else if outputText && !popupError}
-      <span class="done-status">
-        <svg viewBox="0 0 12 12" aria-hidden="true"><path d="m2.5 6 2.1 2.1 4.9-4.8" /></svg>
-        Ready
-      </span>
-    {/if}
-    <button class="icon-button" aria-label="Close" title="Close" tabindex="-1" onclick={closePopup}>
-      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8" /></svg>
-    </button>
+    <div class="header-actions">
+      {#if isStreaming}
+        <span class="stream-status"><i></i>{streamStatus}</span>
+      {:else if unchanged}
+        <span class="done-status">
+          <svg viewBox="0 0 12 12" aria-hidden="true"><path d="m2.5 6 2.1 2.1 4.9-4.8" /></svg>
+          Already looks good
+        </span>
+      {/if}
+      {#if comparison && comparison.changeCount > 0}
+        <button
+          class="icon-button change-toggle"
+          class:active={reviewingChanges}
+          type="button"
+          aria-label="Show changes"
+          aria-pressed={reviewingChanges}
+          title={reviewingChanges ? "Show clean result" : "Show changes"}
+          onclick={() => (resultView = reviewingChanges ? "result" : "changes")}
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8s-2.5 4.5-6.5 4.5S1.5 8 1.5 8Z" /><circle cx="8" cy="8" r="2" /></svg>
+        </button>
+      {/if}
+      <button class="icon-button" aria-label="Close" title="Close" tabindex="-1" onclick={closePopup}>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8" /></svg>
+      </button>
+    </div>
   </header>
 
   <section bind:this={resultElement} class="result" class:loading={isStreaming} aria-live="polite" aria-busy={isStreaming}>
     {#if outputText}
-      <div class="text" dir="auto">{outputText}{#if isStreaming}<span class="stream-cursor" aria-hidden="true"></span>{/if}</div>
+      {#if reviewingChanges && comparison}
+        <TextDiff parts={comparison.parts} />
+      {:else}
+        <div class="text" dir="auto">{outputText}{#if isStreaming}<span class="stream-cursor" aria-hidden="true"></span>{/if}</div>
+      {/if}
     {:else if !popupError}
       <div class="skeleton" aria-label="Preparing your proofread result"><i></i><i></i><i></i></div>
     {/if}
@@ -284,12 +354,13 @@
 
   .popup-header { display: flex; align-items: center; flex: none; height: 38px; padding: 0 10px 0 14px; border-bottom: 1px solid var(--separator); user-select: none; }
   .popup-title { color: var(--secondary); font-size: 12px; font-weight: 600; }
-  .icon-button { display: grid; place-items: center; width: 22px; height: 22px; margin-left: 6px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--secondary); cursor: pointer; }
+  .header-actions { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+  .icon-button { display: grid; place-items: center; flex: none; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--secondary); cursor: pointer; }
   .icon-button svg { width: 12px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.5; }
-  .icon-button:focus-visible { outline: none; }
   .icon-button:hover { background: var(--key); color: var(--label); }
+  .change-toggle.active { background: var(--key); color: var(--accent); }
 
-  .stream-status, .done-status { display: flex; align-items: center; gap: 6px; margin-left: auto; font-size: 11px; }
+  .stream-status, .done-status { display: flex; align-items: center; gap: 6px; font-size: 11px; }
   .stream-status { color: var(--secondary); }
   .stream-status i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); animation: pulse 1s infinite alternate; }
   .done-status { gap: 4px; color: var(--success); font-weight: 500; }
