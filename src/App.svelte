@@ -31,6 +31,9 @@
   let showChanges = $state(false);
   let isTogglingChanges = $state(false);
   let changesNote = $state("");
+  let fastMode = $state(true);
+  let isTogglingFast = $state(false);
+  let fastNote = $state("");
   const isMac = navigator.userAgent.includes("Mac");
 
   let tab = $state<"general" | "translation">("general");
@@ -76,6 +79,7 @@
         shortcut = await invoke<string>("get_shortcut");
         replaceShortcut = await invoke<string>("get_replace_shortcut");
         showChanges = await invoke<boolean>("get_show_changes");
+        fastMode = await invoke<boolean>("get_fast_mode");
         translation = await invoke<typeof translation>("get_translation_settings");
       } catch (error) {
         note("connection", `Could not load settings: ${error}`);
@@ -177,6 +181,23 @@
       changesNote = String(error);
     } finally {
       isTogglingChanges = false;
+    }
+  }
+
+  async function toggleFastMode() {
+    if (isTogglingFast) return;
+    isTogglingFast = true;
+    fastNote = "";
+    const enabled = !fastMode;
+    try {
+      await invoke("set_fast_mode", { enabled });
+      fastMode = enabled;
+      // The connection test runs with the same effort, so its result no longer applies.
+      testState = "idle";
+    } catch (error) {
+      fastNote = String(error);
+    } finally {
+      isTogglingFast = false;
     }
   }
 
@@ -409,6 +430,14 @@
         <button class="switch" class:on={showChanges} type="button" role="switch" aria-checked={showChanges} aria-labelledby="show-changes-label" aria-describedby="show-changes-description" disabled={isTogglingChanges} onclick={toggleShowChanges}><i></i></button>
       </div>
       {#if changesNote}<p class="row note" role="alert">{changesNote}</p>{/if}
+      <div class="row preference-row">
+        <div class="preference-label">
+          <span id="fast-mode-label">Fast mode</span>
+          <p id="fast-mode-description">Skip the model's extra thinking for quicker results.</p>
+        </div>
+        <button class="switch" class:on={fastMode} type="button" role="switch" aria-checked={fastMode} aria-labelledby="fast-mode-label" aria-describedby="fast-mode-description" disabled={isTogglingFast} onclick={toggleFastMode}><i></i></button>
+      </div>
+      {#if fastNote}<p class="row note" role="alert">{fastNote}</p>{/if}
       <div class="row">
         <span>Launch at login</span>
         <button class="switch" class:on={launchAtLogin} type="button" role="switch" aria-checked={launchAtLogin} aria-label="Launch at login" disabled={isTogglingLogin} onclick={toggleLaunchAtLogin}><i></i></button>

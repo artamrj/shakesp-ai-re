@@ -6,6 +6,7 @@ mod popup;
 mod updater;
 
 use std::{
+    collections::HashMap,
     fs,
     io::ErrorKind,
     path::PathBuf,
@@ -17,19 +18,29 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ai::{default_system_prompt, stream_chat, translation_system_prompt, AiConfig};
+use ai::{
+    default_system_prompt, stream_chat, translation_system_prompt, warm_up, AiConfig, AiError,
+};
 use clipboard::{restore_clipboard, save_clipboard, write_to_clipboard};
 use keyring::{Entry, Error as KeyringError};
 use popup::PopupWindow;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
-use tokio_stream::StreamExt;
+use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 
 static AI_CONFIG: OnceLock<Mutex<AiConfig>> = OnceLock::new();
 static ACTIVE_SHORTCUT: OnceLock<Mutex<String>> = OnceLock::new();
 static REPLACE_SHORTCUT: OnceLock<Mutex<String>> = OnceLock::new();
 static SHOW_CHANGES: AtomicBool = AtomicBool::new(false);
+static FAST_MODE: AtomicBool = AtomicBool::new(true);
+/// Fast mode asks the model to skip its hidden reasoning. Endpoints accept different
+/// values, so try the fastest first and remember which one each endpoint and model takes.
+const FAST_REASONING_EFFORTS: [&str; 2] = ["none", "minimal"];
+static REASONING_CHOICE: OnceLock<Mutex<HashMap<String, usize>>> = OnceLock::new();
+/// A request started from the shortcut, before the popup asks for it.
+static PREFETCH: Mutex<Option<Prefetch>> = Mutex::new(None);
+const PREFETCH_MAX_AGE: Duration = Duration::from_secs(15);
 static TRANSLATION: OnceLock<Mutex<TranslationSettings>> = OnceLock::new();
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 const DEFAULT_MODEL: &str = "gpt-5.6-luna";
@@ -93,6 +104,8 @@ struct PersistedAiConfig {
     replace_shortcut: String,
     #[serde(default)]
     show_changes: bool,
+    #[serde(default = "default_fast_mode")]
+    fast_mode: bool,
     #[serde(default)]
     translation_enabled: bool,
     #[serde(default = "default_translation_language")]
@@ -107,6 +120,109 @@ struct TranslationSettings {
     enabled: bool,
     language: String,
     shortcut: String,
+}
+
+fn default_fast_mode() -> bool {
+    true
+}
+
+type AiStream = ReceiverStream<Result<String, AiError>>;
+
+struct Prefetch {
+    selected_text: String,
+    translate: bool,
+    started: Instant,
+    handle: tokio::task::JoinHandle<Result<(AiStream, Option<&'static str>), AiError>>,
+}
+
+fn reasoning_choice() -> &'static Mutex<HashMap<String, usize>> {
+    REASONING_CHOICE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Opens a stream, in Fast mode with the lowest reasoning effort the endpoint accepts,
+/// falling back to the model's default when it accepts none of them.
+async fn open_stream(
+    config: &AiConfig,
+    system_prompt: &str,
+    selected_text: &str,
+) -> Result<(AiStream, Option<&'static str>), AiError> {
+    let key = format!("{}|{}", config.base_url, config.model);
+    let fast = FAST_MODE.load(Ordering::Relaxed);
+    let first = if fast {
+        reasoning_choice()
+            .lock()
+            .ok()
+            .and_then(|choices| choices.get(&key).copied())
+            .unwrap_or(0)
+    } else {
+        FAST_REASONING_EFFORTS.len()
+    };
+    let mut last_error = None;
+    for index in first..=FAST_REASONING_EFFORTS.len() {
+        let effort = FAST_REASONING_EFFORTS.get(index).copied();
+        match stream_chat(config, system_prompt, selected_text, effort).await {
+            Ok(stream) => {
+                if fast {
+                    if let Ok(mut choices) = reasoning_choice().lock() {
+                        choices.insert(key, index);
+                    }
+                }
+                return Ok((stream, effort));
+            }
+            Err(error) if error.rejected_reasoning() => last_error = Some(error),
+            Err(error) => return Err(error),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| AiError::new("The AI request failed.", false)))
+}
+
+fn system_prompt_for(translate: bool) -> Result<String, String> {
+    if !translate {
+        return Ok(default_system_prompt());
+    }
+    let language = translation()
+        .lock()
+        .map_err(|error| error.to_string())?
+        .language
+        .clone();
+    Ok(translation_system_prompt(&language))
+}
+
+/// Sends the request as soon as the text is captured, so the model is already
+/// working while the popup appears. The popup's stream request picks it up.
+fn start_prefetch(selected_text: &str, translate: bool) {
+    let Ok(config) = ai_config().lock().map(|config| config.clone()) else {
+        return;
+    };
+    let Ok(system_prompt) = system_prompt_for(translate) else {
+        return;
+    };
+    let text = selected_text.to_string();
+    let handle = tokio::spawn(async move { open_stream(&config, &system_prompt, &text).await });
+    if let Ok(mut slot) = PREFETCH.lock() {
+        if let Some(previous) = slot.replace(Prefetch {
+            selected_text: selected_text.to_string(),
+            translate,
+            started: Instant::now(),
+            handle,
+        }) {
+            previous.handle.abort();
+        }
+    }
+}
+
+/// Takes the prefetched request when it was made for this exact popup content.
+fn take_prefetch(selected_text: &str, translate: bool) -> Option<Prefetch> {
+    let prefetch = PREFETCH.lock().ok()?.take()?;
+    if prefetch.selected_text == selected_text
+        && prefetch.translate == translate
+        && prefetch.started.elapsed() < PREFETCH_MAX_AGE
+    {
+        Some(prefetch)
+    } else {
+        prefetch.handle.abort();
+        None
+    }
 }
 
 fn default_translation_language() -> String {
@@ -366,6 +482,7 @@ fn load_ai_config(app: &AppHandle) -> Result<(), String> {
         Ok(contents) => match serde_json::from_str::<PersistedAiConfig>(&contents) {
             Ok(saved) => {
                 SHOW_CHANGES.store(saved.show_changes, Ordering::Relaxed);
+                FAST_MODE.store(saved.fast_mode, Ordering::Relaxed);
                 if !saved.base_url.trim().is_empty() {
                     config.base_url = saved.base_url;
                 }
@@ -456,6 +573,7 @@ fn write_settings_file(app: &AppHandle, config: &AiConfig) -> Result<(), String>
             .map_err(|error| error.to_string())?
             .clone(),
         show_changes: SHOW_CHANGES.load(Ordering::Relaxed),
+        fast_mode: FAST_MODE.load(Ordering::Relaxed),
         translation_enabled: translation.enabled,
         translation_language: translation.language,
         translate_shortcut: translation.shortcut,
@@ -482,6 +600,7 @@ mod persistence_tests {
             shortcut: "Control+Shift+Space".to_string(),
             replace_shortcut: "Enter".to_string(),
             show_changes: true,
+            fast_mode: true,
             translation_enabled: true,
             translation_language: "Persian".to_string(),
             translate_shortcut: "Control+Shift+KeyT".to_string(),
@@ -501,6 +620,7 @@ mod persistence_tests {
         assert_eq!(settings.shortcut, default_shortcut());
         assert_eq!(settings.replace_shortcut, "Enter");
         assert!(!settings.show_changes);
+        assert!(settings.fast_mode);
         assert!(!settings.translation_enabled);
         assert_eq!(settings.translation_language, "English");
         assert!(parse_shortcut(&settings.translate_shortcut).is_ok());
@@ -598,6 +718,22 @@ fn set_show_changes(app: AppHandle, enabled: bool) -> Result<(), String> {
     // The popup is prewarmed and reused, so notify it as well as persisting the setting.
     app.emit("show-changes-changed", enabled)
         .unwrap_or_else(|error| log::warn!("could not notify windows of Show changes: {error}"));
+    Ok(())
+}
+
+#[tauri::command]
+fn get_fast_mode() -> bool {
+    FAST_MODE.load(Ordering::Relaxed)
+}
+
+#[tauri::command]
+fn set_fast_mode(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let config = ai_config().lock().map_err(|error| error.to_string())?;
+    let previous = FAST_MODE.swap(enabled, Ordering::Relaxed);
+    if let Err(error) = write_settings_file(&app, &config) {
+        FAST_MODE.store(previous, Ordering::Relaxed);
+        return Err(format!("Could not save Fast mode: {error}"));
+    }
     Ok(())
 }
 
@@ -844,29 +980,53 @@ async fn stream_ai_text(app: AppHandle, selected_text: String) -> Result<(), Str
         .lock()
         .map_err(|error| error.to_string())?
         .clone();
-    let system_prompt = if PopupWindow::is_translate()? {
-        let language = translation()
-            .lock()
-            .map_err(|error| error.to_string())?
-            .language
-            .clone();
-        translation_system_prompt(&language)
-    } else {
-        default_system_prompt()
-    };
+    let translate = PopupWindow::is_translate()?;
+    let system_prompt = system_prompt_for(translate)?;
     let mut emitted_content = false;
+    let mut prefetch = take_prefetch(&selected_text, translate);
+    // Time from the request being sent, so the log shows what the model itself costs.
+    let request_started = prefetch
+        .as_ref()
+        .map(|prefetch| prefetch.started)
+        .unwrap_or_else(Instant::now);
+    if prefetch.is_some() {
+        log::info!(
+            "using the request started {} ms ago from the shortcut",
+            request_started.elapsed().as_millis()
+        );
+    }
+    let mut effort_used = None;
 
     'attempts: for attempt in 1..=STREAM_MAX_ATTEMPTS {
+        let opened = async {
+            match prefetch.take() {
+                Some(prefetch) => prefetch.handle.await.unwrap_or_else(|error| {
+                    Err(AiError::new(
+                        format!("The AI request stopped: {error}"),
+                        true,
+                    ))
+                }),
+                None => open_stream(&config, &system_prompt, &selected_text).await,
+            }
+        };
         let stream_result = tokio::select! {
             _ = PopupWindow::wait_for_stream_cancel(stream_generation) => {
                 log::info!("AI request cancelled before streaming began");
                 return Ok(());
             }
-            result = stream_chat(&config, &system_prompt, &selected_text) => result,
+            result = opened => result,
         };
 
         let mut stream = match stream_result {
-            Ok(stream) => stream,
+            Ok((stream, effort)) => {
+                effort_used = effort;
+                log::info!(
+                    "AI response headers in {} ms (reasoning effort: {})",
+                    request_started.elapsed().as_millis(),
+                    effort.unwrap_or("model default")
+                );
+                stream
+            }
             Err(error) => {
                 if error.is_retryable() && attempt < STREAM_MAX_ATTEMPTS {
                     emit_stream_retry(&app, attempt + 1, error.to_string());
@@ -892,6 +1052,12 @@ async fn stream_ai_text(app: AppHandle, selected_text: String) -> Result<(), Str
 
             match result {
                 Some(Ok(content)) if !content.is_empty() => {
+                    if !emitted_content {
+                        log::info!(
+                            "AI first text in {} ms",
+                            request_started.elapsed().as_millis()
+                        );
+                    }
                     emitted_content = true;
                     if let Some(popup) = app.get_webview_window("popup") {
                         let _ = popup.emit("ai-stream-chunk", content);
@@ -925,7 +1091,11 @@ async fn stream_ai_text(app: AppHandle, selected_text: String) -> Result<(), Str
             let _ = popup.emit("ai-stream-done", ());
         }
     }
-    log::info!("AI stream completed");
+    log::info!(
+        "AI stream completed in {} ms (reasoning effort: {})",
+        request_started.elapsed().as_millis(),
+        effort_used.unwrap_or("model default")
+    );
     Ok(())
 }
 
@@ -972,7 +1142,7 @@ async fn test_ai_connection(mut config: AiConfig) -> Result<(), String> {
     config.base_url = config.base_url.trim().to_string();
     config.model = config.model.trim().to_string();
     let check = async {
-        let mut stream = stream_chat(&config, "Reply with the single word: ready", "ping")
+        let (mut stream, _) = open_stream(&config, "Reply with the single word: ready", "ping")
             .await
             .map_err(|error| error.to_string())?;
         while let Some(chunk) = stream.next().await {
@@ -1144,6 +1314,10 @@ fn run_shortcut_flow(app: AppHandle, translate: bool) {
             return;
         };
         let shortcut_started = Instant::now();
+        // Connect to the AI service while the selection is being copied.
+        if let Ok(base_url) = ai_config().lock().map(|config| config.base_url.clone()) {
+            tauri::async_runtime::spawn(async move { warm_up(&base_url).await });
+        }
         // osascript is slow and blocking; overlap it with the text capture.
         let source_task = tokio::task::spawn_blocking(input::frontmost_application);
         let result = async {
@@ -1154,6 +1328,9 @@ fn run_shortcut_flow(app: AppHandle, translate: bool) {
                 selected.chars().count(),
                 shortcut_started.elapsed().as_millis()
             );
+            if !selected.trim().is_empty() {
+                start_prefetch(&selected, translate);
+            }
             if let Some(main) = app.get_webview_window("main") {
                 main.hide().map_err(|error| error.to_string())?;
             }
@@ -1329,6 +1506,8 @@ pub fn run() {
             set_replace_shortcut,
             get_show_changes,
             set_show_changes,
+            get_fast_mode,
+            set_fast_mode,
             set_shortcut,
             capture_selected_text,
             get_popup_selection,
