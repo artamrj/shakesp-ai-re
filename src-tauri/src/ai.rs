@@ -14,14 +14,21 @@ const STREAM_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(
 pub struct AiError {
     message: String,
     retryable: bool,
+    rejected_reasoning: bool,
 }
 
 impl AiError {
-    fn new(message: impl Into<String>, retryable: bool) -> Self {
+    pub fn new(message: impl Into<String>, retryable: bool) -> Self {
         Self {
             message: message.into(),
             retryable,
+            rejected_reasoning: false,
         }
+    }
+
+    /// The endpoint refused the `reasoning_effort` parameter or its value.
+    pub fn rejected_reasoning(&self) -> bool {
+        self.rejected_reasoning
     }
 
     pub fn is_retryable(&self) -> bool {
@@ -202,6 +209,8 @@ fn http_client() -> Result<&'static reqwest::Client, AiError> {
     let client = reqwest::Client::builder()
         .connect_timeout(CONNECT_TIMEOUT)
         .tcp_keepalive(std::time::Duration::from_secs(30))
+        // Keep the warmed TLS connection around between occasional shortcut presses.
+        .pool_idle_timeout(std::time::Duration::from_secs(600))
         .build()
         .map_err(|error| {
             log::error!("could not create AI HTTP client: {error}");
@@ -210,10 +219,25 @@ fn http_client() -> Result<&'static reqwest::Client, AiError> {
     Ok(HTTP_CLIENT.get_or_init(|| client))
 }
 
+/// Opens (or refreshes) a pooled connection to the endpoint so the real request
+/// skips DNS, TCP, and TLS setup. HEAD has no body, so the connection returns to
+/// the pool as soon as the headers arrive. Any status, even 404, is fine.
+pub async fn warm_up(base_url: &str) {
+    let Ok(client) = http_client() else { return };
+    let url = format!("{}/models", base_url.trim().trim_end_matches('/'));
+    let started = std::time::Instant::now();
+    match tokio::time::timeout(CONNECT_TIMEOUT, client.head(url).send()).await {
+        Ok(Ok(_)) => log::info!("AI connection warm in {} ms", started.elapsed().as_millis()),
+        Ok(Err(error)) => log::info!("AI connection warm-up failed: {error}"),
+        Err(_) => log::info!("AI connection warm-up timed out"),
+    }
+}
+
 pub async fn stream_chat(
     config: &AiConfig,
     system_prompt: &str,
     selected_text: &str,
+    reasoning_effort: Option<&str>,
 ) -> Result<ReceiverStream<Result<String, AiError>>, AiError> {
     if config.base_url.trim().is_empty() {
         return Err(AiError::new("API base URL is empty.", false));
@@ -223,14 +247,18 @@ pub async fn stream_chat(
     }
 
     let url = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
-    let mut request = http_client()?.post(url).json(&json!({
+    let mut body = json!({
         "model": config.model,
         "messages": [
             { "role": "system", "content": system_prompt },
             { "role": "user", "content": selected_text }
         ],
         "stream": true
-    }));
+    });
+    if let Some(effort) = reasoning_effort {
+        body["reasoning_effort"] = json!(effort);
+    }
+    let mut request = http_client()?.post(url).json(&body);
     if !config.api_key.trim().is_empty() {
         request = request.bearer_auth(config.api_key.trim());
     }
@@ -263,6 +291,17 @@ pub async fn stream_chat(
             .and_then(|value| value.pointer("/error/message")?.as_str().map(str::to_owned))
             .unwrap_or_else(|| body.trim().to_string());
         let detail = detail.chars().take(240).collect::<String>();
+        if reasoning_effort.is_some()
+            && matches!(status.as_u16(), 400 | 422)
+            && detail.to_lowercase().contains("reasoning")
+        {
+            log::info!("endpoint rejected reasoning_effort {reasoning_effort:?}: {detail}");
+            return Err(AiError {
+                message: format!("The AI service returned {status}: {detail}"),
+                retryable: false,
+                rejected_reasoning: true,
+            });
+        }
         let (message, retryable) = match status.as_u16() {
             401 => (
                 "Authentication failed. Check your API key.".to_string(),
@@ -346,7 +385,7 @@ pub async fn stream_chat(
 
 #[cfg(test)]
 mod tests {
-    use super::SseDecoder;
+    use super::{stream_chat, AiConfig, SseDecoder};
 
     #[test]
     fn decodes_events_split_across_network_chunks() {
@@ -371,6 +410,53 @@ mod tests {
         );
 
         assert_eq!(events[0].as_ref().unwrap(), "ok");
+    }
+
+    /// Serves one canned HTTP response on a local port and returns its base URL.
+    fn one_shot_server(status: &str, body: &str) -> String {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let address = listener.local_addr().expect("address");
+        let response = format!(
+            "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buffer = [0; 8192];
+                let _ = stream.read(&mut buffer);
+                let _ = stream.write_all(response.as_bytes());
+            }
+        });
+        format!("http://{address}/v1")
+    }
+
+    fn config_for(base_url: String) -> AiConfig {
+        AiConfig {
+            base_url,
+            api_key: String::new(),
+            model: "test-model".to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn flags_a_rejected_reasoning_effort_so_it_can_be_retried_without_it() {
+        let body = r#"{"error":{"message":"Unsupported value: 'reasoning_effort' does not support 'none' with this model."}}"#;
+        let config = config_for(one_shot_server("400 Bad Request", body));
+        let error = stream_chat(&config, "system", "text", Some("none"))
+            .await
+            .expect_err("the request should be rejected");
+        assert!(error.rejected_reasoning());
+    }
+
+    #[tokio::test]
+    async fn other_bad_requests_are_not_mistaken_for_a_rejected_effort() {
+        let body = r#"{"error":{"message":"The model does not exist."}}"#;
+        let config = config_for(one_shot_server("400 Bad Request", body));
+        let error = stream_chat(&config, "system", "text", Some("none"))
+            .await
+            .expect_err("the request should be rejected");
+        assert!(!error.rejected_reasoning());
     }
 
     #[test]

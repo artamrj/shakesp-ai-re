@@ -80,6 +80,7 @@ shakespAIre lives in your menu bar (system tray on Windows and Linux), so it is 
 - **Launch at login** — optional, one switch in Settings.
 - **One design everywhere** — a shared design system, the same bundled font (Inter), and light and dark mode on every platform.
 - **Small and fast** — Tauri 2 + Rust + Svelte. No Electron and no bundled browser, so the app itself is only a few megabytes.
+- **Fast by default** — **Fast mode** asks the model to skip its hidden reasoning, the connection is opened while your selection is being copied, and the request is sent before the popup even appears. The log records how long the first word took.
 - **Retry & cancel** — transient failures retry automatically, and you can cancel a stream mid-flight.
 
 ## How it works
@@ -164,6 +165,7 @@ Choose **Settings…** from the menu bar icon. On first launch the window opens 
 | **Connection → Test connection** | | Sends a tiny request using the values in the form, *without saving them*. Shows **Connected** or the reason it failed. |
 | **Shortcut** | ⇧⌘Space / Shift+Ctrl+Space | Global trigger. |
 | **Replace key** | Enter | Used inside the popup. |
+| **Fast mode** | on | Asks the model for the lowest reasoning effort it accepts (`none`, then `minimal`), so text starts sooner. Endpoints that reject the setting are retried without it automatically. Turn it off if a reasoning model's answers get worse. |
 | **Show changes** | off | Highlights edits after proofreading. Saves immediately and applies to an open popup. |
 | **Launch at login** | off | Starts shakespAIre quietly in the menu bar when you log in. |
 | **Accessibility** *(macOS)* | | Shows whether the permission is granted, with a link to fix it. |
@@ -258,6 +260,7 @@ shakespAIre updates itself from the menu bar icon.
 | "Authentication failed" | Wrong or missing API key. Use **Test connection**, or create a new key at [platform.openai.com/api-keys](https://platform.openai.com/api-keys). A ChatGPT subscription does not include API access. |
 | Popup appears at the mouse, not the selection | The app in front does not report where the selection is. This is expected in many Chromium/Electron apps and on Linux/Windows. |
 | Translate shortcut does nothing | Make sure the **Translator** switch is on. If Settings says the shortcut could not be registered, another app owns it; record a different one. |
+| Results are slow to start | Keep **Fast mode** on, and try a smaller or faster model. The log shows `AI first text in … ms` and the reasoning effort used for each request. |
 | Shortcut does nothing | Another app may already own that shortcut. Pick a different one in Settings; the log will say `could not register global shortcut`. |
 | "Couldn't check for updates" | No published release with update files was found, or you are offline. It is harmless. |
 | Tray icon missing on Linux | Your desktop needs a system tray; on GNOME install an AppIndicator extension. |
