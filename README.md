@@ -6,7 +6,7 @@
 
 **Select. Shortcut. shakespAIre it.**
 
-Universal AI-powered proofreading for **macOS, Windows, and Linux**.
+AI-powered proofreading and translation for any app on **macOS, Windows, and Linux**.
 
 [![Latest release](https://img.shields.io/github/v/release/artamrj/shakesp-ai-re?label=release&color=blue)](https://github.com/artamrj/shakesp-ai-re/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -19,17 +19,39 @@ Universal AI-powered proofreading for **macOS, Windows, and Linux**.
 
 ---
 
-Select text in **any** application, press a global shortcut, and a small floating popup streams an AI-proofread version. Press **Enter** to replace the original text, **⌘/Ctrl+C** to copy, or **Esc** to cancel. shakespAIre lives in your menu bar (system tray on Windows and Linux), so it is always one shortcut away and never in your way.
+Select text in **any** application, press a global shortcut, and a small floating popup streams an AI-proofread version. Press **Enter** to replace the original text, **⌘/Ctrl+C** to copy, or **Esc** to cancel.
+
+Turn on the **translator** and a second shortcut translates any selection into the language you choose, from 52 languages, with right-to-left scripts such as Persian, Arabic, and Hebrew laid out correctly.
+
+shakespAIre lives in your menu bar (system tray on Windows and Linux), so it is always one shortcut away and never in your way.
 
 ## Contents
 
-[Demo](#demo) · [Why](#why-shakespaire) · [Features](#features) · [How it works](#how-it-works) · [Download](#download) · [Usage](#usage) · [Configuration](#configuration) · [Updates](#updates) · [Platform notes](#platform-notes) · [Troubleshooting](#troubleshooting) · [Privacy & security](#privacy--security) · [Build from source](#build-from-source) · [Project layout](#project-layout) · [Releasing](#releasing) · [Contributing](#contributing)
+[Demo](#demo) · [Screenshots](#screenshots) · [Why](#why-shakespaire) · [Features](#features) · [How it works](#how-it-works) · [Download](#download) · [Usage](#usage) · [Translator](#the-translator) · [Configuration](#configuration) · [Updates](#updates) · [Platform notes](#platform-notes) · [Troubleshooting](#troubleshooting) · [Privacy & security](#privacy--security) · [Build from source](#build-from-source) · [Project layout](#project-layout) · [Releasing](#releasing) · [Contributing](#contributing)
 
 ## Demo
 
 <p align="center">
   <img src="assets/screenshots/demo.webp" width="640" alt="shakespAIre demo: select text, press the shortcut, stream the proofread, press Enter to replace" />
 </p>
+
+## Screenshots
+
+<p align="center">
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/popup-proofread-dark.webp" /><img src="assets/screenshots/popup-proofread.webp" width="300" alt="Proofread popup streaming a corrected sentence with Replace and Copy buttons" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/popup-changes-dark.webp" /><img src="assets/screenshots/popup-changes.webp" width="300" alt="Proofread popup with Show changes on: additions underlined in green, deletions struck through in red" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/popup-translate-dark.webp" /><img src="assets/screenshots/popup-translate.webp" width="300" alt="Translate popup showing a French sentence translated into Persian, laid out right to left" /></picture>
+</p>
+<p align="center"><sub><b>Proofread</b> · <b>Show changes</b> · <b>Translate</b> (right to left)</sub></p>
+
+<p align="center">
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/settings-general-dark.webp" /><img src="assets/screenshots/settings-general.webp" width="340" alt="Settings, General tab: server, API key, model, connection test, shortcuts, Show changes, launch at login" /></picture>
+  &nbsp;
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/settings-translation-picker-dark.webp" /><img src="assets/screenshots/settings-translation-picker.webp" width="340" alt="Settings, Translation tab: translator switch, searchable language picker with native names and RTL tags, direction, and shortcut" /></picture>
+</p>
+<p align="center"><sub><b>Settings → General</b> · <b>Settings → Translation</b></sub></p>
+
+<p align="center"><sub>Screenshots follow your GitHub theme. Switch between light and dark to see both.</sub></p>
 
 ## Why shakespAIre?
 
@@ -39,6 +61,7 @@ Select text in **any** application, press a global shortcut, and a small floatin
 | **Your model, your data** | Bring your own OpenAI-compatible key, or run a local model and keep every word on your machine. |
 | **No subscription, no account** | Nothing to sign up for. No telemetry. Open source under MIT. |
 | **Small and native** | Rust and Tauri, not Electron. It sits in the menu bar and stays out of the way. |
+| **Proofread and translate** | One shortcut fixes your writing; another translates anything you read or write into your language. |
 | **Strict by design** | Fixes grammar, spelling, and punctuation and leaves your voice alone. It never rewrites. |
 
 ## Features
@@ -46,12 +69,13 @@ Select text in **any** application, press a global shortcut, and a small floatin
 - **Works anywhere** — email, docs, browsers, terminals, chat apps. Not bound to any single editor.
 - **Strict proofreading** — fixes only grammar, spelling, and punctuation. Preserves your meaning, voice, tone, style, slang, dialect, emoji, and formatting. Corrects in the language you wrote in.
 - **Streaming results** — output streams in as it is generated and is shown exactly as it will be pasted. The popup grows a little for long results.
+- **Translator** — turn it on in its own **Translation** tab, pick a target language from 52 (searchable by English name, native name, or code), and press its shortcut (**⇧⌘Y** / **Shift+Ctrl+Y**) on any selection. Mixed-language text is translated in full; formatting, URLs, code, and names are kept; text already in your language is left as is.
 - **Optional change preview** — enable **Show changes** to review highlighted additions and deletions after proofreading. A small eye button in the popup header toggles highlights; Replace and Copy always use the clean corrected text.
 - **Menu bar app** — no window on launch and no Dock icon. One icon gives you your version, update checks, Settings, and Quit.
 - **Customizable keys** — record your own global shortcut and your own **Replace** key (default **Enter**) from Settings. Changes apply immediately.
 - **OpenAI-compatible** — bring your own API key, or point it at a local model (Ollama, LM Studio, anything speaking the Chat Completions API).
 - **Keychain-secured** — your API key lives in the OS keychain, never in the settings file.
-- **Right-to-left ready** — Arabic, Persian, and Hebrew text is laid out in the right direction, paragraph by paragraph.
+- **Right-to-left ready** — Arabic, Persian, Hebrew, Urdu, Pashto, and Kurdish are laid out right to left, in proofreads paragraph by paragraph and in translations by the target language, with embedded English names and numbers kept in order.
 - **Self-updating** — check for and install new versions from the menu bar icon.
 - **Launch at login** — optional, one switch in Settings.
 - **One design everywhere** — a shared design system, the same bundled font (Inter), and light and dark mode on every platform.
@@ -66,6 +90,8 @@ Select text in **any** application, press a global shortcut, and a small floatin
    - **Linux:** it reads the highlighted text straight from the *primary selection*, without touching your clipboard, and falls back to copying if that is empty.
 3. **Stream** — the AI streams a proofread into the popup in real time.
 4. **Act** — press **Enter** (or your Replace key) to replace the original, **⌘/Ctrl+C** to copy, or **Esc** to cancel. Clicking anywhere outside the popup closes it.
+
+The translator works the same way with its own shortcut: the popup streams the translation, then you read it, select and copy what you need, or press **Esc**.
 
 ## Download
 
@@ -86,6 +112,7 @@ Every release also contains `latest.json` and `.sig` files. Those are what the b
 | Action | Default |
 |---|---|
 | Trigger a proofread | macOS **⇧⌘Space** · Windows/Linux **Shift+Ctrl+Space** |
+| Translate the selection *(when the translator is on)* | macOS **⇧⌘Y** · Windows/Linux **Shift+Ctrl+Y** |
 | Replace the original text | **Enter** *(configurable)* |
 | Copy the result | **⌘/Ctrl+C** |
 | Cancel / close | **Esc** |
@@ -100,6 +127,18 @@ Enable **Show changes** in Settings to open a change preview when proofreading f
 
 When the result exactly matches your selection, the status says **Already looks good**.
 
+### The translator
+
+Open **Settings → Translation** and flip the **Translator** switch. Then:
+
+1. **Choose a language.** Click **Translate to**, type to filter (`fa`, `pers`, and `فارسی` all find Persian), and press **Enter**. Right-to-left languages are tagged **RTL**, and the **Direction** row shows how results will be laid out.
+2. **Set the shortcut** if you want a different one. It must include a modifier and cannot be the same as the proofread shortcut.
+3. **Select text anywhere and press the shortcut.** The popup header shows **Translate → <language>** and the translation streams in.
+
+The translation popup has no Replace or Copy buttons. Select the text to copy it with **⌘/Ctrl+C**, or press **Esc** to close. If the text is already in your target language it is returned unchanged and the status reads **Already in <language>**. **Preview translation** in Settings runs a real translation of a sample French sentence.
+
+Every change in the Translation tab saves immediately. The shortcut is only registered while the translator is on.
+
 ### The menu bar icon
 
 Click the icon in the menu bar (or system tray) to open its menu:
@@ -113,7 +152,9 @@ Click the icon in the menu bar (or system tray) to open its menu:
 
 ## Configuration
 
-Choose **Settings…** from the menu bar icon. On first launch the window opens once by itself.
+Choose **Settings…** from the menu bar icon. On first launch the window opens once by itself. Settings has two tabs: **General** and **Translation**.
+
+**General tab**
 
 | Setting | Default | Notes |
 |---|---|---|
@@ -126,6 +167,15 @@ Choose **Settings…** from the menu bar icon. On first launch the window opens 
 | **Show changes** | off | Highlights edits after proofreading. Saves immediately and applies to an open popup. |
 | **Launch at login** | off | Starts shakespAIre quietly in the menu bar when you log in. |
 | **Accessibility** *(macOS)* | | Shows whether the permission is granted, with a link to fix it. |
+
+**Translation tab**
+
+| Setting | Default | Notes |
+|---|---|---|
+| **Translator** | off | Registers or removes the translate shortcut immediately. |
+| **Translate to** | English | 52 languages. Searchable by English name, native name, or language code. |
+| **Direction** | | Read-only: right to left or left to right for the chosen language. |
+| **Shortcut** | ⇧⌘Y / Shift+Ctrl+Y | Global translate trigger. Must differ from the proofread shortcut. |
 
 Click **Save** to store the server, key, and model. The keys, Show changes, and the login switch apply as soon as you change them. **Preview popup** (under the Save button) opens the popup on a sample sentence and streams a real proofread, so you can check your setup end to end. **Replace** is disabled in the preview.
 
@@ -147,7 +197,7 @@ Point shakespAIre at a local server to keep your text on your machine — no API
 ### Where things are stored
 
 - **API key** → OS keychain (service `com.artamrj.shakesp-ai-re`, account `ai-api-key`). Where no keychain exists (common on minimal Linux desktops), a file `ai-api-key.txt` in the app's config folder is used instead, readable only by your user.
-- **Settings file** (`ai-settings.json`) holds the base URL, model, shortcut, and Replace key — **never the API key** (enforced by a unit test).
+- **Settings file** (`ai-settings.json`) holds the base URL, model, shortcut, Replace key, and translator settings — **never the API key** (enforced by a unit test).
 - **Logs** → `shakesp-ai-re/logs/shakesp-ai-re.log` in your user data folder (`~/Library/Application Support` on macOS, `~/.local/share` on Linux, `%LOCALAPPDATA%` on Windows).
 - **Environment overrides** (for development): `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `OPENAI_MODEL` take precedence over the settings file.
 
@@ -207,6 +257,7 @@ shakespAIre updates itself from the menu bar icon.
 | Result appears but **Replace** does nothing | **macOS:** re-check Accessibility. **Linux:** install `xdotool` (X11) or `wtype` (Wayland, not GNOME). **Windows:** run both apps at the same privilege level. |
 | "Authentication failed" | Wrong or missing API key. Use **Test connection**, or create a new key at [platform.openai.com/api-keys](https://platform.openai.com/api-keys). A ChatGPT subscription does not include API access. |
 | Popup appears at the mouse, not the selection | The app in front does not report where the selection is. This is expected in many Chromium/Electron apps and on Linux/Windows. |
+| Translate shortcut does nothing | Make sure the **Translator** switch is on. If Settings says the shortcut could not be registered, another app owns it; record a different one. |
 | Shortcut does nothing | Another app may already own that shortcut. Pick a different one in Settings; the log will say `could not register global shortcut`. |
 | "Couldn't check for updates" | No published release with update files was found, or you are offline. It is harmless. |
 | Tray icon missing on Linux | Your desktop needs a system tray; on GNOME install an AppIndicator extension. |
@@ -219,7 +270,7 @@ The log file (see [Where things are stored](#where-things-are-stored)) records e
 - Your **API key** is stored in the OS keychain — the settings file is verified to never contain it.
 - Your **clipboard is saved and restored** around every capture and replace (macOS/Windows), so shakespAIre doesn't clobber what you copied. On Linux the selection is read without using the clipboard.
 - Your selected text is sent **only to the endpoint you configure**. Point it at a local model to keep text entirely on your machine.
-- **Prompt-injection guard:** the selected text is treated as data, not as instructions to the model.
+- **Prompt-injection guard:** the selected text is treated as data, not as instructions to the model, in both proofreading and translation. The target language name is validated before it reaches the prompt.
 - **Signed updates:** the app refuses any update not signed by the project's key.
 
 ## Build from source
@@ -269,7 +320,8 @@ Then open the dev copy's Settings and choose a **different shortcut** from the i
 ```
 src/                     Svelte 5 frontend (settings window and popup)
   App.svelte             Settings window
-  Popup.svelte           Proofread popup
+  Popup.svelte           Proofread and translate popup
+  languages.ts           Translator languages (names, codes, direction)
   TextDiff.svelte        Display-only change highlights
   text-diff.ts           Bounded, Unicode-aware text comparison
   theme.css              Shared design system
@@ -277,7 +329,7 @@ src/                     Svelte 5 frontend (settings window and popup)
   fonts/                 Bundled Inter (SIL OFL)
 src-tauri/               Rust backend (Tauri 2)
   src/lib.rs             App setup, commands, tray menu, shortcuts
-  src/ai.rs              Streaming chat client
+  src/ai.rs              Streaming chat client, proofread and translate prompts
   src/clipboard.rs       Selection capture and clipboard restore
   src/input.rs           Copy/paste simulation, selection bounds (per OS)
   src/popup.rs           Popup window, positioning, focus

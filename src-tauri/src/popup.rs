@@ -22,6 +22,7 @@ struct PopupContext {
     selected_text: String,
     source_application: Option<String>,
     is_test: bool,
+    translate: bool,
     error: String,
 }
 
@@ -29,6 +30,7 @@ static POPUP_CONTEXT: Mutex<PopupContext> = Mutex::new(PopupContext {
     selected_text: String::new(),
     source_application: None,
     is_test: false,
+    translate: false,
     error: String::new(),
 });
 static STREAM_GENERATION: AtomicU64 = AtomicU64::new(0);
@@ -56,22 +58,26 @@ impl PopupWindow {
         app: &AppHandle<R>,
         selected_text: &str,
         source_application: Option<String>,
+        translate: bool,
     ) -> Result<(), String> {
-        Self::show_with_mode(app, selected_text, source_application, false, "")
+        Self::show_with_mode(app, selected_text, source_application, false, translate, "")
     }
 
-    pub fn show_test<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
-        Self::show_with_mode(
-            app,
-            "i has a apple and ther going to the stor tomorow, it be a good day.",
-            None,
-            true,
-            "",
-        )
+    pub fn show_test<R: Runtime>(app: &AppHandle<R>, translate: bool) -> Result<(), String> {
+        let sample = if translate {
+            "Bonjour ! J'espère que tu passes une excellente journée. On se voit demain au café ?"
+        } else {
+            "i has a apple and ther going to the stor tomorow, it be a good day."
+        };
+        Self::show_with_mode(app, sample, None, true, translate, "")
     }
 
-    pub fn show_error<R: Runtime>(app: &AppHandle<R>, error: &str) -> Result<(), String> {
-        Self::show_with_mode(app, "", None, false, error)
+    pub fn show_error<R: Runtime>(
+        app: &AppHandle<R>,
+        error: &str,
+        translate: bool,
+    ) -> Result<(), String> {
+        Self::show_with_mode(app, "", None, false, translate, error)
     }
 
     fn show_with_mode<R: Runtime>(
@@ -79,12 +85,14 @@ impl PopupWindow {
         selected_text: &str,
         source_application: Option<String>,
         is_test: bool,
+        translate: bool,
         error: &str,
     ) -> Result<(), String> {
         *POPUP_CONTEXT.lock().map_err(|error| error.to_string())? = PopupContext {
             selected_text: selected_text.to_string(),
             source_application,
             is_test,
+            translate,
             error: error.to_string(),
         };
         Self::cancel_stream();
@@ -204,6 +212,13 @@ impl PopupWindow {
         POPUP_CONTEXT
             .lock()
             .map(|context| context.is_test)
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn is_translate() -> Result<bool, String> {
+        POPUP_CONTEXT
+            .lock()
+            .map(|context| context.translate)
             .map_err(|error| error.to_string())
     }
 

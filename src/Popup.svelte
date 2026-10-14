@@ -6,6 +6,7 @@
   import { eventShortcut, shortcutParts } from "./shortcut";
   import TextDiff from "./TextDiff.svelte";
   import { compareText, keepOuterWhitespace } from "./text-diff";
+  import { findLanguage } from "./languages";
 
   let selectedText = $state("");
   let outputText = $state("");
@@ -26,9 +27,12 @@
   let showChanges = $state(false);
   let resultView = $state<"result" | "changes">("changes");
   let isComplete = $state(false);
+  let isTranslate = $state(false);
+  let targetLanguage = $state("English");
+  const target = $derived(findLanguage(targetLanguage));
   const unchanged = $derived(isComplete && !popupError && outputText === selectedText);
   // Compare once the final result arrives; partial streams are not meaningful edits.
-  const comparison = $derived(showChanges && isComplete && !popupError
+  const comparison = $derived(showChanges && !isTranslate && isComplete && !popupError
     ? compareText(selectedText, outputText)
     : null);
   const reviewingChanges = $derived(resultView === "changes" && comparison !== null && comparison.changeCount > 0);
@@ -194,13 +198,17 @@
     resultView = "changes";
 
     try {
-      const [capturedText, testMode, contextError, changesEnabled] = await Promise.all([
+      const [capturedText, testMode, contextError, changesEnabled, translateMode, translation] = await Promise.all([
         invoke<string>("get_popup_selection"),
         invoke<boolean>("get_popup_test_mode"),
         invoke<string>("get_popup_error"),
         invoke<boolean>("get_show_changes").catch(() => false),
+        invoke<boolean>("get_popup_translate").catch(() => false),
+        invoke<{ language: string }>("get_translation_settings").catch(() => null),
       ]);
       if (generation !== requestGeneration) return;
+      isTranslate = translateMode;
+      if (translation) targetLanguage = translation.language;
       if (contextError) {
         popupError = contextError;
         return;
@@ -220,7 +228,7 @@
   }
 
   async function applyReplacement() {
-    if (isTestPopup || isStreaming || isApplying || popupError || !outputText.trim()) return;
+    if (isTranslate || isTestPopup || isStreaming || isApplying || popupError || !outputText.trim()) return;
     isApplying = true;
     popupError = "";
     try {
@@ -266,6 +274,9 @@
     if (event.key === "Escape") {
       event.preventDefault();
       void closePopup();
+    } else if (isTranslate) {
+      // Translations have no Replace or Copy: selecting the text and copying works natively.
+      return;
     } else if (!event.isComposing && !activatesButton && eventShortcut(event) === replaceShortcut) {
       event.preventDefault();
       void applyReplacement();
@@ -279,7 +290,15 @@
 <main class="popup-shell">
   <header class="popup-header">
     <div class="popup-title">
-      <strong>Proofread</strong>
+      {#if isTranslate}
+        <strong class="translate-title">
+          Translate
+          <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6h8m0 0L7 3m3 3L7 9" /></svg>
+          <span dir={target?.rtl ? "rtl" : "ltr"}>{target?.native ?? targetLanguage}</span>
+        </strong>
+      {:else}
+        <strong>Proofread</strong>
+      {/if}
     </div>
     <div class="header-actions">
       {#if isStreaming}
@@ -287,7 +306,7 @@
       {:else if unchanged}
         <span class="done-status">
           <svg viewBox="0 0 12 12" aria-hidden="true"><path d="m2.5 6 2.1 2.1 4.9-4.8" /></svg>
-          Already looks good
+          {isTranslate ? `Already in ${target?.name ?? targetLanguage}` : "Already looks good"}
         </span>
       {/if}
       {#if comparison && comparison.changeCount > 0}
@@ -314,10 +333,10 @@
       {#if reviewingChanges && comparison}
         <TextDiff parts={comparison.parts} />
       {:else}
-        <div class="text" dir="auto">{outputText}{#if isStreaming}<span class="stream-cursor" aria-hidden="true"></span>{/if}</div>
+        <div class="text" class:translation={isTranslate} dir={isTranslate ? (target?.rtl ? "rtl" : "ltr") : "auto"} lang={isTranslate ? target?.code : undefined}>{outputText}{#if isStreaming}<span class="stream-cursor" aria-hidden="true"></span>{/if}</div>
       {/if}
     {:else if !popupError}
-      <div class="skeleton" aria-label="Preparing your proofread result"><i></i><i></i><i></i></div>
+      <div class="skeleton" dir={isTranslate && target?.rtl ? "rtl" : "ltr"} aria-label={isTranslate ? "Preparing your translation" : "Preparing your proofread result"}><i></i><i></i><i></i></div>
     {/if}
     {#if isStreaming && retryMessage && !outputText}
       <p class="retry-note">{retryMessage}</p>
@@ -333,6 +352,7 @@
     {/if}
   </section>
 
+  {#if !isTranslate}
   <footer class="popup-actions">
     <button class="btn btn-sm btn-primary" onclick={applyReplacement} disabled={isTestPopup || isStreaming || isApplying || !!popupError || !outputText.trim()} title={isTestPopup ? "Preview only. Nothing is replaced." : `Replace selected text (${shortcutParts(replaceShortcut, isMac).join(" ")})`}>
       {#if isApplying}<span class="button-spinner"></span>{/if}
@@ -347,6 +367,7 @@
       {copyState === "copied" ? "Copied" : copyState === "error" ? "Copy failed" : "Copy"}
     </button>
   </footer>
+  {/if}
 </main>
 
 <style>
@@ -354,7 +375,10 @@
   :global(html[data-platform="linux"]) .popup-shell { background: var(--bg-solid); }
 
   .popup-header { display: flex; align-items: center; flex: none; height: 38px; padding: 0 10px 0 14px; border-bottom: 1px solid var(--separator); user-select: none; }
-  .popup-title { color: var(--secondary); font-size: 12px; font-weight: 600; }
+  .popup-title { min-width: 0; color: var(--secondary); font-size: 12px; font-weight: 600; }
+  .translate-title { display: inline-flex; align-items: center; gap: 5px; }
+  .translate-title svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5; }
+  .translate-title span { color: var(--accent); unicode-bidi: isolate; }
   .header-actions { display: flex; align-items: center; gap: 4px; margin-left: auto; }
   .icon-button { display: grid; place-items: center; flex: none; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--secondary); cursor: pointer; }
   .icon-button svg { width: 12px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.5; }
@@ -369,11 +393,14 @@
 
   .result { flex: 1 1 auto; min-height: 0; padding: 12px 14px; overflow-y: auto; scrollbar-color: color-mix(in srgb, var(--label) 20%, transparent) transparent; scrollbar-width: thin; }
   .text { color: var(--label); line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; unicode-bidi: plaintext; text-align: start; }
+  /* The target language sets the direction; isolate keeps embedded names and numbers in order. */
+  .text.translation { unicode-bidi: isolate; user-select: text; cursor: text; }
   .text :global(.stream-cursor) { display: inline-block; width: 2px; height: 1em; margin-inline-start: 2px; border-radius: 2px; background: var(--accent); vertical-align: -0.15em; animation: blink 0.72s steps(1) infinite; }
 
   .skeleton { display: grid; gap: 12px; padding-top: 3px; }
   .skeleton i { display: block; height: 10px; border-radius: 999px; background: linear-gradient(90deg, var(--key) 20%, color-mix(in srgb, var(--label) 16%, transparent) 40%, var(--key) 60%); background-size: 300% 100%; animation: shimmer 1.35s ease infinite; }
   .skeleton i:nth-child(2) { width: 92%; }
+  .skeleton[dir="rtl"] i { justify-self: end; }
   .skeleton i:nth-child(3) { width: 54%; }
   .retry-note { margin: 9px 0 0; color: var(--secondary); font-size: 11px; line-height: 1.35; }
 
