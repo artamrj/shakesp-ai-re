@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/artamrj/shakesp-ai-re/compare/v0.3.1...v0.4.0) (2026-10-14)
+
+
+### Features
+
+* add a translator with its own shortcut, target language, and RTL support ([#29](https://github.com/artamrj/shakesp-ai-re/issues/29)) ([1722f28](https://github.com/artamrj/shakesp-ai-re/commit/1722f282c36a3e483f892858943d94d1f3b54448))
+
 ## [0.3.1](https://github.com/artamrj/shakesp-ai-re/compare/v0.3.0...v0.3.1) (2026-10-14)
 
 
