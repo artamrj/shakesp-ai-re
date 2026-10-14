@@ -155,7 +155,6 @@ There are deliberately no type-check or test steps here: CI already gates everyt
 | No Release pull request appears | The last commits on `main` were only `ci:`, `docs:`, `chore:`, and so on. It appears after a `feat:` or `fix:`. Also check the *Allow GitHub Actions to create pull requests* setting. |
 | The Release pull request has no **CI** check | It was opened with the default token. Add `RELEASE_PLEASE_TOKEN`, or merge it as an admin. |
 | `Unexpected input(s) 'includeUpdaterJson'` | Harmless old warning. The valid input is `uploadUpdaterJson`. |
-| `STATIC_VCRUNTIME is deprecated` in the Windows build | Harmless. The Tauri CLI still sets an environment variable that the newer build library prefers as a config option. It disappears when both are updated together. |
 | Builds recompile every dependency | The Rust cache was not saved (a failed job saves nothing). `release.yml` uses `cache-on-failure`, so a retry starts warm. The first successful run after a `Cargo.lock` change is slower. |
 | Pull request title check fails | Title must start with a type, for example `fix: handle empty selection`. |
 
