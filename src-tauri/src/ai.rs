@@ -189,6 +189,7 @@ RULES:
 - Translate meaning, not word by word. The result must read as if a fluent native {target_language} speaker wrote it.
 - Preserve tone, formality, emotion, and intent.
 - Preserve formatting, line breaks, lists, URLs, email addresses, code, numbers, and placeholders.
+- Keep Markdown and other markup exactly as written (heading markers, list markers and nesting, emphasis, tables, links, code blocks). Translate only the human-readable text inside it; never translate code, URLs, or link targets.
 - Keep proper nouns, brand names, and technical terms that are normally left untranslated in {target_language}.
 - Use the natural script, punctuation, and digits of {target_language}.
 - If the text is already entirely in {target_language}, return it unchanged.
