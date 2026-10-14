@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/artamrj/shakesp-ai-re/compare/v0.4.0...v0.4.1) (2026-10-14)
+
+
+### Performance
+
+* start answers sooner with Fast mode, connection warm-up, and an early request ([#31](https://github.com/artamrj/shakesp-ai-re/issues/31)) ([3e5ef7a](https://github.com/artamrj/shakesp-ai-re/commit/3e5ef7a815233c70e65c381f66508c19a74e02d8))
+
 ## [0.4.0](https://github.com/artamrj/shakesp-ai-re/compare/v0.3.1...v0.4.0) (2026-10-14)
 
 
