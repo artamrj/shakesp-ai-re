@@ -61,3 +61,11 @@ export function visibleWhitespace(value: string): string {
     return "·";
   });
 }
+
+/** Models drop the selection's surrounding whitespace, e.g. a trailing newline. Restore it. */
+export function keepOuterWhitespace(original: string, corrected: string): string {
+  const leading = original.match(/^\s*/u)![0];
+  const trailing = original.slice(leading.length).match(/\s*$/u)![0];
+  const core = corrected.trim();
+  return core ? leading + core + trailing : corrected;
+}
