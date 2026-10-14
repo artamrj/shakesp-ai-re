@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/artamrj/shakesp-ai-re/compare/v0.2.2...v0.3.0) (2026-10-14)
+
+
+### Features
+
+* add text comparison feature with change preview in proofreading ([#25](https://github.com/artamrj/shakesp-ai-re/issues/25)) ([5730078](https://github.com/artamrj/shakesp-ai-re/commit/57300784ba87395c1679361c4a8a713130395493))
+
 ## [0.2.2](https://github.com/artamrj/shakesp-ai-re/compare/v0.2.1...v0.2.2) (2026-09-29)
 
 
