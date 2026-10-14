@@ -1,0 +1,34 @@
+name: PR title
+
+# Squash-merging makes the pull request title the commit message, and release-please turns
+# commit messages into versions and the changelog, so the title must follow the convention.
+# Kept apart from CI so editing a title does not rebuild (and cancel) everything.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  pr-title:
+    name: Conventional PR title
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: amannn/action-semantic-pull-request@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            perf
+            refactor
+            docs
+            build
+            ci
+            test
+            style
+            chore
+            revert

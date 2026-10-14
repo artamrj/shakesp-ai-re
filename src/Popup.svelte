@@ -5,7 +5,7 @@
   import { onMount, tick } from "svelte";
   import { eventShortcut, shortcutParts } from "./shortcut";
   import TextDiff from "./TextDiff.svelte";
-  import { compareText } from "./text-diff";
+  import { compareText, keepOuterWhitespace } from "./text-diff";
 
   let selectedText = $state("");
   let outputText = $state("");
@@ -68,6 +68,7 @@
         }),
         await listen("ai-stream-done", () => {
           flushOutput();
+          outputText = keepOuterWhitespace(selectedText, outputText);
           isStreaming = false;
           isComplete = true;
           retryMessage = "";

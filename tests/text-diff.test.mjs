@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { compareText, visibleWhitespace } from "../src/text-diff.ts";
+import { compareText, keepOuterWhitespace, visibleWhitespace } from "../src/text-diff.ts";
 
 function verify(original, corrected) {
   const result = compareText(original, corrected);
@@ -85,4 +85,11 @@ test("older webviews without Intl.Segmenter preserve exact text", async () => {
   } finally {
     Intl.Segmenter = nativeSegmenter;
   }
+});
+
+test("restores the selection's surrounding whitespace on the result", () => {
+  assert.equal(keepOuterWhitespace("never in your way.\n", "never in your way."), "never in your way.\n");
+  assert.equal(keepOuterWhitespace("  teh cat \n\n", "The cat"), "  The cat \n\n");
+  assert.equal(keepOuterWhitespace("no space", " No space.\n"), "No space.");
+  assert.equal(compareText("a way.\n", keepOuterWhitespace("a way.\n", "a way.")).changeCount, 0);
 });
