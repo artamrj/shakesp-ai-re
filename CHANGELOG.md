@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/artamrj/shakesp-ai-re/compare/v0.4.1...v0.5.0) (2026-10-29)
+
+
+### Features
+
+* render Markdown in translations, with right-to-left layout ([#34](https://github.com/artamrj/shakesp-ai-re/issues/34)) ([58609e0](https://github.com/artamrj/shakesp-ai-re/commit/58609e00a135dda0d1e3d03ccb7cac95ee712f3c))
+
 ## [0.4.1](https://github.com/artamrj/shakesp-ai-re/compare/v0.4.0...v0.4.1) (2026-10-14)
 
 
