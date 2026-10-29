@@ -7,6 +7,7 @@
   import TextDiff from "./TextDiff.svelte";
   import { compareText, keepOuterWhitespace } from "./text-diff";
   import { findLanguage } from "./languages";
+  import { looksLikeMarkdown, renderMarkdown } from "./markdown";
 
   let selectedText = $state("");
   let outputText = $state("");
@@ -30,6 +31,9 @@
   let isTranslate = $state(false);
   let targetLanguage = $state("English");
   const target = $derived(findLanguage(targetLanguage));
+  // Decide from the source so the view does not switch styles halfway through a stream.
+  const showMarkdown = $derived(isTranslate && (looksLikeMarkdown(selectedText) || (isComplete && looksLikeMarkdown(outputText))));
+  const markdownHtml = $derived(showMarkdown ? renderMarkdown(outputText) : "");
   const unchanged = $derived(isComplete && !popupError && outputText === selectedText);
   // Compare once the final result arrives; partial streams are not meaningful edits.
   const comparison = $derived(showChanges && !isTranslate && isComplete && !popupError
@@ -333,7 +337,12 @@
       {#if reviewingChanges && comparison}
         <TextDiff parts={comparison.parts} />
       {:else}
+        {#if showMarkdown}
+          <!-- renderMarkdown escapes all text and emits only its own tags, with no links. -->
+          <div class="text translation markdown" dir={target?.rtl ? "rtl" : "ltr"} lang={target?.code}>{@html markdownHtml}</div>
+        {:else}
         <div class="text" class:translation={isTranslate} dir={isTranslate ? (target?.rtl ? "rtl" : "ltr") : "auto"} lang={isTranslate ? target?.code : undefined}>{outputText}{#if isStreaming}<span class="stream-cursor" aria-hidden="true"></span>{/if}</div>
+        {/if}
       {/if}
     {:else if !popupError}
       <div class="skeleton" dir={isTranslate && target?.rtl ? "rtl" : "ltr"} aria-label={isTranslate ? "Preparing your translation" : "Preparing your proofread result"}><i></i><i></i><i></i></div>
@@ -395,6 +404,32 @@
   .text { color: var(--label); line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; unicode-bidi: plaintext; text-align: start; }
   /* The target language sets the direction; isolate keeps embedded names and numbers in order. */
   .text.translation { unicode-bidi: isolate; user-select: text; cursor: text; }
+  /* Rendered Markdown: compact for a small popup, and mirrored by logical properties in RTL. */
+  .markdown { white-space: normal; }
+  .markdown :global(:is(h1, h2, h3, h4, h5, h6)) { margin: 0.7em 0 0.3em; line-height: 1.3; font-weight: 650; }
+  .markdown :global(h1) { font-size: 1.3em; }
+  .markdown :global(h2) { font-size: 1.15em; }
+  .markdown :global(:is(h3, h4, h5, h6)) { font-size: 1em; }
+  .markdown :global(:is(p, ul, ol, blockquote, pre, .md-table)) { margin: 0 0 0.6em; }
+  .markdown :global(> :first-child) { margin-top: 0; }
+  .markdown :global(> :last-child) { margin-bottom: 0; }
+  .markdown :global(:is(ul, ol)) { padding-inline-start: 1.35em; }
+  .markdown :global(:is(ul, ol) :is(ul, ol)) { margin: 0.15em 0 0; }
+  .markdown :global(li) { margin: 0.15em 0; }
+  .markdown :global(li::marker) { color: var(--secondary); }
+  .markdown :global(.md-task) { display: inline-block; width: 0.85em; height: 0.85em; margin-inline-end: 0.4em; border: 1.5px solid var(--secondary); border-radius: 3px; vertical-align: -0.1em; }
+  .markdown :global(.md-task.done) { border-color: var(--accent); background: var(--accent); }
+  .markdown :global(li:has(> .md-task)) { list-style: none; margin-inline-start: -1.1em; }
+  .markdown :global(blockquote) { padding-inline-start: 0.8em; border-inline-start: 3px solid var(--separator); color: var(--secondary); }
+  .markdown :global(code) { padding: 0.1em 0.35em; border-radius: 4px; background: var(--key); font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.9em; unicode-bidi: isolate; }
+  .markdown :global(pre) { padding: 8px 10px; overflow-x: auto; border-radius: 8px; background: var(--key); text-align: left; }
+  .markdown :global(pre code) { padding: 0; background: none; white-space: pre; }
+  .markdown :global(hr) { margin: 0.8em 0; border: 0; border-top: 1px solid var(--separator); }
+  .markdown :global(.md-link) { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+  .markdown :global(.md-table) { overflow-x: auto; }
+  .markdown :global(table) { border-collapse: collapse; font-size: 0.92em; }
+  .markdown :global(:is(th, td)) { padding: 4px 8px; border: 1px solid var(--separator); text-align: start; }
+  .markdown :global(th) { background: var(--key); font-weight: 600; }
   .text :global(.stream-cursor) { display: inline-block; width: 2px; height: 1em; margin-inline-start: 2px; border-radius: 2px; background: var(--accent); vertical-align: -0.15em; animation: blink 0.72s steps(1) infinite; }
 
   .skeleton { display: grid; gap: 12px; padding-top: 3px; }
